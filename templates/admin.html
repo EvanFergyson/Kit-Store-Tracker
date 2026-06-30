@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Admin{% endblock %}
+{% block content %}
+  <h1>Admin</h1>
+
+  <section class="card">
+    <h2>Pending Requests</h2>
+    {% if pending_requests %}
+      <table>
+        <thead>
+          <tr><th>Requested</th><th>Name</th><th>Item</th><th>Qty</th><th>Message</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for r in pending_requests %}
+          <tr>
+            <td>{{ r.created_at.strftime('%d %b %Y') }}</td>
+            <td>{{ r.requester_name }}{% if r.requester_email %}<br><small>{{ r.requester_email }}</small>{% endif %}</td>
+            <td>{{ r.item_name }}</td>
+            <td>{{ r.quantity }}</td>
+            <td>{{ r.message or '' }}</td>
+            <td class="actions">
+              <form method="post" action="{{ url_for('resolve_request', request_id=r.id, action='approve') }}">
+                <button type="submit" class="btn btn-small btn-success">Approve</button>
+              </form>
+              <form method="post" action="{{ url_for('resolve_request', request_id=r.id, action='deny') }}">
+                <button type="submit" class="btn btn-small btn-danger">Deny</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="empty-state">No pending requests.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Add Kit Item</h2>
+    <form method="post" action="{{ url_for('add_item') }}" class="inline-form">
+      <label for="name">Name</label>
+      <input type="text" id="name" name="name" required>
+
+      <label for="category">Category</label>
+      <input type="text" id="category" name="category" placeholder="e.g. Climbing, Camping">
+
+      <label for="condition">Condition</label>
+      <select id="condition" name="condition">
+        <option>Good</option>
+        <option>Fair</option>
+        <option>Needs Repair</option>
+        <option>Retired</option>
+      </select>
+
+      <label for="location">Storage location</label>
+      <input type="text" id="location" name="location">
+
+      <label for="quantity_total">Quantity</label>
+      <input type="number" id="quantity_total" name="quantity_total" min="1" value="1">
+
+      <label for="description">Description</label>
+      <textarea id="description" name="description" rows="2"></textarea>
+
+      <button type="submit" class="btn btn-primary">Add Item</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Kit Inventory</h2>
+    {% if items %}
+      <table>
+        <thead>
+          <tr><th>Name</th><th>Category</th><th>Condition</th><th>Location</th><th>Available</th><th>Total</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for item in items %}
+          <tr>
+            <td><input form="item-form-{{ item.id }}" type="text" name="name" value="{{ item.name }}"></td>
+            <td><input form="item-form-{{ item.id }}" type="text" name="category" value="{{ item.category }}"></td>
+            <td>
+              <select form="item-form-{{ item.id }}" name="condition">
+                {% for c in ['Good', 'Fair', 'Needs Repair', 'Retired'] %}
+                  <option {% if item.condition == c %}selected{% endif %}>{{ c }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td><input form="item-form-{{ item.id }}" type="text" name="location" value="{{ item.location or '' }}"></td>
+            <td>{{ item.quantity_available }}</td>
+            <td><input form="item-form-{{ item.id }}" type="number" name="quantity_total" value="{{ item.quantity_total }}" min="0" style="width:4rem"></td>
+            <td class="actions">
+              <form id="item-form-{{ item.id }}" method="post" action="{{ url_for('edit_item', item_id=item.id) }}"></form>
+              <button type="submit" form="item-form-{{ item.id }}" class="btn btn-small">Save</button>
+              <form method="post" action="{{ url_for('delete_item', item_id=item.id) }}" onsubmit="return confirm('Delete {{ item.name }}?');">
+                <button type="submit" class="btn btn-small btn-danger">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="empty-state">No kit items yet &mdash; add your first one above.</p>
+    {% endif %}
+  </section>
+
+  {% if resolved_requests %}
+  <section class="card">
+    <h2>Recently Resolved Requests</h2>
+    <table>
+      <thead><tr><th>Name</th><th>Item</th><th>Status</th><th>Resolved</th></tr></thead>
+      <tbody>
+        {% for r in resolved_requests %}
+        <tr>
+          <td>{{ r.requester_name }}</td>
+          <td>{{ r.item_name }}</td>
+          <td><span class="badge badge-{{ r.status }}">{{ r.status }}</span></td>
+          <td>{{ r.resolved_at.strftime('%d %b %Y') if r.resolved_at else '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+{% endblock %}

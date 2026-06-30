@@ -27,3 +27,15 @@ Temporary Items
 
 .zsh_history
 
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Flask / project secrets & local data
+.env
+instance/
+*.db
+*.db-journal
+

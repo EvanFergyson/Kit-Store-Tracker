@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}CUMC Kit Store Tracker{% endblock %}
+{% block content %}
+  <section class="hero">
+    <h1>CUMC Kit Store Tracker</h1>
+    <p>Track club gear, sign kit in and out, and request items for your next trip.</p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="{{ url_for('request_kit') }}">Request Kit</a>
+      <a class="btn btn-secondary" href="{{ url_for('login') }}">Committee Login</a>
+    </div>
+  </section>
+{% endblock %}

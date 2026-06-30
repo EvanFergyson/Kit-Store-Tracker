@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Committee Login{% endblock %}
+{% block content %}
+  <section class="card narrow">
+    <h1>Committee Login</h1>
+    <form method="post">
+      <label for="password">Committee password</label>
+      <input type="password" id="password" name="password" required autofocus>
+      <button type="submit" class="btn btn-primary">Log In</button>
+    </form>
+  </section>
+{% endblock %}

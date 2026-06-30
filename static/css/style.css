@@ -1,0 +1,182 @@
+:root {
+  --color-primary: #1d4e3c;
+  --color-primary-dark: #133a2c;
+  --color-bg: #f6f7f5;
+  --color-card: #ffffff;
+  --color-border: #dde2de;
+  --color-text: #1f2622;
+  --color-muted: #5d6a63;
+  --color-success: #2f7d4f;
+  --color-error: #b3261e;
+  --radius: 8px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.5;
+}
+
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+}
+
+.site-header {
+  background: var(--color-primary);
+  color: #fff;
+}
+
+.header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1.25rem;
+}
+
+.brand {
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+  font-size: 1.1rem;
+}
+
+.site-header nav a {
+  color: #eef3ef;
+  text-decoration: none;
+  margin-left: 1.1rem;
+  font-size: 0.95rem;
+}
+
+.site-header nav a:hover { text-decoration: underline; }
+
+main.container { padding-top: 1.75rem; padding-bottom: 3rem; }
+
+.site-footer {
+  border-top: 1px solid var(--color-border);
+  color: var(--color-muted);
+  font-size: 0.85rem;
+  padding: 1.25rem 0;
+  margin-top: 2rem;
+}
+
+h1 { margin-top: 0; }
+
+.card {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.card.narrow { max-width: 420px; }
+
+.hero { text-align: center; padding: 3rem 0; }
+.hero-actions { margin-top: 1.5rem; display: flex; gap: 0.75rem; justify-content: center; }
+
+form label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 0.75rem 0 0.25rem;
+  color: var(--color-muted);
+}
+
+form input,
+form select,
+form textarea {
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+.inline-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.5rem 1rem;
+  align-items: end;
+}
+
+.inline-form > div,
+.inline-form label { grid-column: span 1; }
+
+.btn {
+  display: inline-block;
+  padding: 0.55rem 1.1rem;
+  border-radius: 6px;
+  border: none;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  margin-top: 1rem;
+}
+
+.btn-primary { background: var(--color-primary); color: #fff; }
+.btn-primary:hover { background: var(--color-primary-dark); }
+.btn-secondary { background: #fff; color: var(--color-primary); border: 1px solid var(--color-primary); }
+.btn-small { padding: 0.3rem 0.7rem; font-size: 0.85rem; margin-top: 0; }
+.btn-success { background: var(--color-success); color: #fff; }
+.btn-danger { background: var(--color-error); color: #fff; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.75rem;
+  font-size: 0.92rem;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+th { color: var(--color-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; }
+
+td.actions { display: flex; gap: 0.4rem; align-items: center; }
+td.actions form { display: inline; }
+
+.empty-state { color: var(--color-muted); font-style: italic; }
+
+.flash-stack { margin-bottom: 1.25rem; }
+
+.flash {
+  padding: 0.7rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+  font-size: 0.92rem;
+}
+
+.flash-success { background: #e4f4e9; color: var(--color-success); border: 1px solid #b9e3c6; }
+.flash-error { background: #fbe9e7; color: var(--color-error); border: 1px solid #f1c4bf; }
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.badge-approved { background: #e4f4e9; color: var(--color-success); }
+.badge-denied { background: #fbe9e7; color: var(--color-error); }
+
+@media (max-width: 600px) {
+  .header-inner { flex-direction: column; gap: 0.5rem; align-items: flex-start; }
+  table, thead, tbody, th, td, tr { display: block; }
+  thead { display: none; }
+  td { border: none; padding: 0.25rem 0; }
+  tr { padding-bottom: 0.75rem; border-bottom: 1px solid var(--color-border); }
+}
