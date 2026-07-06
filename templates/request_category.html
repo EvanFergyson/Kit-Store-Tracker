@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}{{ category.name }} — Request Kit{% endblock %}
+{% block content %}
+  <a class="back-link" href="{{ url_for('request_kit') }}">&larr; All categories</a>
+  <h1>{{ category.name }}</h1>
+
+  {% if groups %}
+    <section class="card">
+      <h2>Kit</h2>
+      <p class="empty-state">These cover several sizes or variants &mdash; the committee will pick the exact one when they approve your request.</p>
+      <table>
+        <thead>
+          <tr><th>Item</th><th>Subcategory</th><th>Available</th><th>Qty</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for group in groups %}
+          <tr>
+            <td>{{ group.name }}</td>
+            <td>{{ group.subcategory.name }}</td>
+            <td>{{ group.quantity_available }} of {{ group.quantity_total }}</td>
+            <td>
+              <form method="post" action="{{ url_for('add_to_basket') }}" class="basket-add-form js-basket-add">
+                <input type="hidden" name="group_id" value="{{ group.id }}">
+                <div class="qty-stepper">
+                  <button type="button" class="qty-step qty-step-down" aria-label="Decrease quantity">&minus;</button>
+                  <input type="number" name="quantity" min="1" value="1" inputmode="numeric" aria-label="Quantity of {{ group.name }}">
+                  <button type="button" class="qty-step qty-step-up" aria-label="Increase quantity">+</button>
+                </div>
+                <button type="submit" class="btn btn-small btn-primary">Add to Basket</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  {% endif %}
+
+  <section class="card">
+    {% if groups %}<h2>Individual Items</h2>{% endif %}
+
+    {% if items and subcategories|length > 1 %}
+      <div class="filter-chips" id="subcategory-filter">
+        <button type="button" class="filter-chip active" data-subcategory-id="">All</button>
+        {% for sub in subcategories %}
+          <button type="button" class="filter-chip" data-subcategory-id="{{ sub.id }}">{{ sub.name }}</button>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if items %}
+      <table>
+        <thead>
+          <tr><th>Item</th><th>Subcategory</th><th>Available</th><th>Qty</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for item in items %}
+          <tr class="kit-row" data-subcategory-id="{{ item.subcategory_id }}">
+            <td>{{ item.name }}</td>
+            <td>{{ item.subcategory.name }}</td>
+            <td>{{ item.quantity_available }} of {{ item.quantity_total }}</td>
+            <td>
+              <form method="post" action="{{ url_for('add_to_basket') }}" class="basket-add-form js-basket-add">
+                <input type="hidden" name="item_id" value="{{ item.id }}">
+                <div class="qty-stepper">
+                  <button type="button" class="qty-step qty-step-down" aria-label="Decrease quantity">&minus;</button>
+                  <input type="number" name="quantity" min="1" value="1" inputmode="numeric" aria-label="Quantity of {{ item.name }}">
+                  <button type="button" class="qty-step qty-step-up" aria-label="Increase quantity">+</button>
+                </div>
+                <button type="submit" class="btn btn-small btn-primary">Add to Basket</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p id="no-filter-match" class="empty-state" hidden>No kit matches this filter &mdash; try a different subcategory.</p>
+    {% else %}
+      <p class="empty-state">No individual items in this category{% if groups %} beyond the groups above{% endif %}.</p>
+    {% endif %}
+  </section>
+
+  <p class="empty-state">Can't find what you need? <a href="{{ url_for('request_kit') }}#cant-find-it">Let us know</a>.</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    initChipFilter("subcategory-filter", "kit-row", "no-filter-match");
+  });
+</script>
+{% endblock %}

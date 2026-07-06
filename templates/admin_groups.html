@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Item Groups{% endblock %}
+{% block content %}
+  <h1>Item Groups</h1>
+  {% include "_admin_nav.html" %}
+
+  <section class="card">
+    <p class="empty-state">Fold several individually-tracked sizes or variants into one listing that members request as a single thing &mdash; e.g. a &ldquo;Nuts&rdquo; group covering Nut Size 1&ndash;11. Assign kit items to a group from Add/Edit Kit Item; the committee still picks the exact size when a group request is collected.</p>
+    {% if item_groups %}
+      <ul class="plain-list">
+        {% for group in item_groups %}
+          <li>
+            {{ group.name }} <small>({{ group.subcategory.name }} &mdash; {{ group.items|length }} item(s))</small>
+            <form method="post" action="{{ url_for('delete_item_group', group_id=group.id) }}" onsubmit="return confirm('Delete group {{ group.name }}?');">
+              <button type="submit" class="btn btn-small btn-danger">Delete</button>
+            </form>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="empty-state">No groups yet.</p>
+    {% endif %}
+    {% if subcategories %}
+      <form method="post" action="{{ url_for('add_item_group') }}" class="inline-form">
+        <div>
+          <label for="new_group_name">New group</label>
+          <input type="text" id="new_group_name" name="name" placeholder="e.g. Nuts">
+        </div>
+        <div>
+          <label for="new_group_subcategory">Under subcategory</label>
+          <select id="new_group_subcategory" name="subcategory_id">
+            {% for sub in subcategories %}<option value="{{ sub.id }}">{{ sub.name }} ({{ sub.category.name }})</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="new_group_description">Description <small>(optional)</small></label>
+          <input type="text" id="new_group_description" name="description" placeholder="e.g. Nut sizes 1-11">
+        </div>
+        <button type="submit" class="btn btn-small btn-primary">Create Group</button>
+      </form>
+    {% else %}
+      <p class="empty-state">Add a category and subcategory first.</p>
+    {% endif %}
+  </section>
+{% endblock %}

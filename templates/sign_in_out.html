@@ -6,24 +6,61 @@
   <section class="card">
     <h2>Sign Out an Item</h2>
     <form method="post" action="{{ url_for('sign_out_item') }}" class="inline-form">
-      <label for="item_id">Item</label>
-      <select id="item_id" name="item_id" required>
-        <option value="" disabled selected>Select an item&hellip;</option>
-        {% for item in items %}
-          <option value="{{ item.id }}" {% if item.quantity_available < 1 %}disabled{% endif %}>
-            {{ item.name }} ({{ item.quantity_available }}/{{ item.quantity_total }} available)
-          </option>
-        {% endfor %}
-      </select>
+      <div>
+        <label for="filter-category">Category</label>
+        <select id="filter-category">
+          <option value="">All categories</option>
+          {% for cat in categories %}
+            <option value="{{ cat.id }}">{{ cat.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
 
-      <label for="borrower_name">Borrower name</label>
-      <input type="text" id="borrower_name" name="borrower_name" required>
+      <div>
+        <label for="filter-subcategory">Subcategory</label>
+        <select id="filter-subcategory">
+          <option value="">All subcategories</option>
+          {% for sub in subcategories %}
+            <option value="{{ sub.id }}" data-category-id="{{ sub.category_id }}">{{ sub.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
 
-      <label for="quantity">Quantity</label>
-      <input type="number" id="quantity" name="quantity" min="1" value="1">
+      <div>
+        <label for="item_id">Item</label>
+        <select id="item_id" name="item_id" required>
+          <option value="" disabled selected data-subcategory-id="">Select an item&hellip;</option>
+          {% for item in items %}
+            <option value="{{ item.id }}" data-subcategory-id="{{ item.subcategory_id }}" {% if item.quantity_available < 1 %}disabled{% endif %}>
+              {{ item.name }} ({{ item.quantity_available }} of {{ item.quantity_total }} available)
+            </option>
+          {% endfor %}
+        </select>
+      </div>
 
-      <label for="notes">Notes</label>
-      <input type="text" id="notes" name="notes">
+      <div>
+        <label for="borrower_name">Borrower name</label>
+        <input type="text" id="borrower_name" name="borrower_name" list="borrower-names" required autocomplete="off">
+        <datalist id="borrower-names">
+          {% for name in borrower_names %}
+            <option value="{{ name }}">
+          {% endfor %}
+        </datalist>
+      </div>
+
+      <div>
+        <label for="quantity">Quantity</label>
+        <div class="qty-stepper">
+          <button type="button" class="qty-step qty-step-down" aria-label="Decrease quantity">&minus;</button>
+          <input type="number" id="quantity" name="quantity" min="1" value="1" inputmode="numeric">
+          <button type="button" class="qty-step qty-step-up" aria-label="Increase quantity">+</button>
+        </div>
+      </div>
+
+      <div>
+        <label for="notes">Notes</label>
+        <input type="text" id="notes" name="notes">
+      </div>
 
       <button type="submit" class="btn btn-primary">Sign Out</button>
     </form>
@@ -48,7 +85,7 @@
             <td>{{ so.notes or '' }}</td>
             <td>
               <form method="post" action="{{ url_for('sign_in_item', signout_id=so.id) }}">
-                <button type="submit" class="btn btn-small">Sign In</button>
+                <button type="submit" class="btn btn-small btn-primary">Sign In</button>
               </form>
             </td>
           </tr>
@@ -59,4 +96,46 @@
       <p class="empty-state">Nothing is currently signed out.</p>
     {% endif %}
   </section>
+
+  <section class="card">
+    <h2>Sign-Out History</h2>
+    <p class="empty-state">Every sign-out ever recorded, out or returned, for tracking activity over time.</p>
+    {% if sign_out_history %}
+      <table>
+        <thead>
+          <tr>
+            <th>Item</th><th>Borrower</th><th>Qty</th><th>Signed Out</th><th>Signed In</th><th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for so in sign_out_history %}
+          <tr>
+            <td>{{ so.item.name }}</td>
+            <td>{{ so.borrower_name }}</td>
+            <td>{{ so.quantity }}</td>
+            <td>{{ so.signed_out_at.strftime('%d %b %Y %H:%M') }}</td>
+            <td>
+              {% if so.signed_in_at %}
+                {{ so.signed_in_at.strftime('%d %b %Y %H:%M') }}
+              {% else %}
+                <span class="badge badge-out">Still out</span>
+              {% endif %}
+            </td>
+            <td>{{ so.notes or '' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="empty-state">No sign-outs have been recorded yet.</p>
+    {% endif %}
+  </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    initCascade("filter-category", "filter-subcategory", "item_id");
+  });
+</script>
 {% endblock %}

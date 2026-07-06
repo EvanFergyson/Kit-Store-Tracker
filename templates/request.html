@@ -1,31 +1,64 @@
 {% extends "base.html" %}
 {% block title %}Request Kit{% endblock %}
 {% block content %}
-  <section class="card narrow">
-    <h1>Request Kit</h1>
-    <p>Need gear for a trip? Fill this in and a committee member will get back to you.</p>
-    <form method="post">
-      <label for="requester_name">Your name</label>
-      <input type="text" id="requester_name" name="requester_name" required>
+  <h1>Request Kit</h1>
+  <p>Browse the kit store by category and add anything you need to your basket, then head to your basket to send the request to the committee.</p>
 
-      <label for="requester_email">Your email</label>
-      <input type="email" id="requester_email" name="requester_email">
+  {% if bundles %}
+    <section class="card">
+      <h2>Kit Bundles</h2>
+      <p class="empty-state">Grab everything for a specific job in one go.</p>
+      {% for bundle in bundles %}
+        <div class="request-group">
+          <div class="request-group-header">
+            <div>
+              <strong>{{ bundle.name }}</strong>
+              {% if bundle.description %}<br><small>{{ bundle.description }}</small>{% endif %}
+              <br>
+              <small>
+                Includes:
+                {% for line in bundle.lines if line.item.active %}{{ line.quantity }}x {{ line.item.name }}{% if not loop.last %}, {% endif %}{% endfor %}
+              </small>
+            </div>
+            <form method="post" action="{{ url_for('add_bundle_to_basket', bundle_id=bundle.id) }}" class="js-basket-add">
+              <button type="submit" class="btn btn-small btn-primary">Add Bundle to Basket</button>
+            </form>
+          </div>
+        </div>
+      {% endfor %}
+    </section>
+  {% endif %}
 
-      <label for="item_name">Item needed</label>
-      <input type="text" id="item_name" name="item_name" list="item-options" required placeholder="e.g. 50m rope">
-      <datalist id="item-options">
-        {% for item in items %}
-          <option value="{{ item.name }}">
-        {% endfor %}
-      </datalist>
+  <h2>Browse by Category</h2>
+  {% if category_cards %}
+    <div class="category-grid">
+      {% for card in category_cards %}
+        <a class="category-card" href="{{ url_for('request_category', category_id=card.category.id) }}">
+          <h3>{{ card.category.name }}</h3>
+          <div class="count">
+            {{ card.item_count }} item{{ 's' if card.item_count != 1 else '' }}{% if card.group_count %}, {{ card.group_count }} group{{ 's' if card.group_count != 1 else '' }}{% endif %}
+          </div>
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty-state">No kit has been added to the store yet.</p>
+  {% endif %}
 
-      <label for="quantity">Quantity</label>
-      <input type="number" id="quantity" name="quantity" min="1" value="1">
+  <section class="card" id="cant-find-it" style="margin-top:1.5rem;">
+    <h2>Can't find it?</h2>
+    <form method="post" action="{{ url_for('add_to_basket') }}" class="inline-form js-basket-add">
+      <label for="custom_name">Item description</label>
+      <input type="text" id="custom_name" name="custom_name" placeholder="e.g. Bike lock">
 
-      <label for="message">Notes (dates needed, trip details, etc.)</label>
-      <textarea id="message" name="message" rows="4"></textarea>
+      <label for="custom_quantity">Quantity</label>
+      <div class="qty-stepper">
+        <button type="button" class="qty-step qty-step-down" aria-label="Decrease quantity">&minus;</button>
+        <input type="number" id="custom_quantity" name="quantity" min="1" value="1" inputmode="numeric">
+        <button type="button" class="qty-step qty-step-up" aria-label="Increase quantity">+</button>
+      </div>
 
-      <button type="submit" class="btn btn-primary">Send Request</button>
+      <button type="submit" class="btn btn-small">Add to Basket</button>
     </form>
   </section>
 {% endblock %}

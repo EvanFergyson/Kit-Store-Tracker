@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Resolved Requests{% endblock %}
+{% block content %}
+  <h1>Resolved Requests</h1>
+  {% include "_admin_nav.html" %}
+
+  <section class="card">
+    <p class="empty-state">The most recently approved or denied member requests.</p>
+    {% if resolved_requests %}
+      <table>
+        <thead><tr><th>Name</th><th>Item</th><th>Qty</th><th>Status</th><th>Resolved</th><th>Fulfilment</th></tr></thead>
+        <tbody>
+          {% for r in resolved_requests %}
+          <tr>
+            <td>{{ r.requester_name }}</td>
+            <td>{{ r.item_name }}</td>
+            <td>{{ r.quantity }}</td>
+            <td><span class="badge badge-{{ r.status }}">{{ r.status }}</span></td>
+            <td>{{ r.resolved_at.strftime('%d %b %Y') if r.resolved_at else '' }}</td>
+            <td>
+              {% if r.status == 'approved' %}
+                {% if r.fulfilled_signout_id %}
+                  <span class="badge badge-collected">Collected</span>
+                {% elif r.group_id %}
+                  {% set group = r.matching_group %}
+                  {% set choices = group.active_items if group else [] %}
+                  {% if choices %}
+                    <form method="post" action="{{ url_for('collect_request', request_id=r.id) }}" class="basket-add-form">
+                      <select name="item_id" required aria-label="Choose which item to hand over for {{ r.item_name }}">
+                        <option value="" disabled selected>Select item&hellip;</option>
+                        {% for choice in choices %}
+                          <option value="{{ choice.id }}" {% if choice.quantity_available < r.quantity %}disabled{% endif %}>
+                            {{ choice.name }} ({{ choice.quantity_available }} available)
+                          </option>
+                        {% endfor %}
+                      </select>
+                      <button type="submit" class="btn btn-small btn-primary">Confirm &amp; Collect</button>
+                    </form>
+                  {% else %}
+                    <small class="empty-state">No items left in this group &mdash; sign out manually</small>
+                  {% endif %}
+                {% elif r.matching_item %}
+                  <form method="post" action="{{ url_for('collect_request', request_id=r.id) }}">
+                    <button type="submit" class="btn btn-small btn-primary">Mark as Collected</button>
+                  </form>
+                {% else %}
+                  <small class="empty-state">No matching item &mdash; sign out manually</small>
+                {% endif %}
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="empty-state">No resolved requests yet.</p>
+    {% endif %}
+  </section>
+{% endblock %}

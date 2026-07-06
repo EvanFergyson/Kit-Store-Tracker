@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Kit Inventory{% endblock %}
+{% block content %}
+  <h1>Kit Inventory</h1>
+  {% include "_admin_nav.html" %}
+
+  <p class="empty-state">Choose a category to see and edit its items.</p>
+  <div style="margin-bottom:1.5rem;">
+    <a href="{{ url_for('add_item') }}" class="btn btn-primary">+ Add Kit Item</a>
+  </div>
+
+  {% if category_cards %}
+    <div class="category-grid">
+      {% for card in category_cards %}
+        <a class="category-card" href="{{ url_for('admin_inventory_category', category_id=card.category.id) }}">
+          <h3>{{ card.category.name }}</h3>
+          <div class="count">{{ card.item_count }} item{{ 's' if card.item_count != 1 else '' }}</div>
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty-state">No categories yet &mdash; <a href="{{ url_for('admin_categories') }}">add one</a> to get started.</p>
+  {% endif %}
+{% endblock %}

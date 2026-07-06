@@ -1,13 +1,31 @@
 :root {
-  --color-primary: #1d4e3c;
-  --color-primary-dark: #133a2c;
+  /* The brand red is used for buttons, the header and focus rings. Text on
+     top of --color-primary needs to be white, so this is deliberately the
+     darker of the two reds - white text on the brighter #ec1d25 measures
+     ~4.4:1 contrast, just under the 4.5:1 WCAG AA minimum for normal text.
+     #bc1016 clears AA comfortably (~6.5:1) while staying clearly "the same red". */
+  --color-primary: #bc1016;
+  --color-primary-dark: #8a0c10;
+  --color-primary-light: #ec1d25;
   --color-bg: #f6f7f5;
   --color-card: #ffffff;
   --color-border: #dde2de;
   --color-text: #1f2622;
   --color-muted: #5d6a63;
-  --color-success: #2f7d4f;
-  --color-error: #b3261e;
+  --color-success: #256b40;
+  /* Deliberately an orange-leaning red rather than the same hue as
+     --color-primary: the brand red is used for every "go" action (Log In,
+     Sign Out, Submit) and this is used for every "destroy" action (Delete,
+     Deny), so the two need to read as different colours at a glance - not
+     just two very close shades of the same red, which is especially hard to
+     tell apart for anyone with red-green colour vision deficiency.
+     --color-error is for white text on top (buttons); --color-error-text is
+     a darker shade of the same hue for text sitting on a light tinted
+     background (flash messages, badges), where --color-error itself doesn't
+     quite clear 4.5:1 contrast against the tint below. */
+  --color-error: #c2410c;
+  --color-error-text: #9a3412;
+  --color-info: #1f4e96;
   --radius: 8px;
 }
 
@@ -66,6 +84,7 @@ main.container { padding-top: 1.75rem; padding-bottom: 3rem; }
 }
 
 h1 { margin-top: 0; }
+h2 { margin: 0 0 0.75rem; }
 
 .card {
   background: var(--color-card);
@@ -79,6 +98,7 @@ h1 { margin-top: 0; }
 
 .hero { text-align: center; padding: 3rem 0; }
 .hero-actions { margin-top: 1.5rem; display: flex; gap: 0.75rem; justify-content: center; }
+.hero-note { margin-top: 0.85rem; color: var(--color-muted); font-size: 0.85rem; }
 
 form label {
   display: block;
@@ -121,18 +141,51 @@ form textarea {
   margin-top: 1rem;
 }
 
+.btn:hover { filter: brightness(0.92); }
+.btn:active { filter: brightness(0.85); }
+
 .btn-primary { background: var(--color-primary); color: #fff; }
-.btn-primary:hover { background: var(--color-primary-dark); }
+.btn-primary:hover { background: var(--color-primary-dark); filter: none; }
 .btn-secondary { background: #fff; color: var(--color-primary); border: 1px solid var(--color-primary); }
-.btn-small { padding: 0.3rem 0.7rem; font-size: 0.85rem; margin-top: 0; }
+/* Used in almost every table row across the app (Approve/Deny/Save/Delete/Sign
+   In/Update/Remove). Padded up from a ~28px effective height to ~40px so it
+   sits much closer to the 44px "comfortable tap target" guideline - these are
+   exactly the buttons committee members tap repeatedly, often on a phone. */
+.btn-small {
+  padding: 0.55rem 0.85rem;
+  font-size: 0.85rem;
+  margin-top: 0;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+}
 .btn-success { background: var(--color-success); color: #fff; }
 .btn-danger { background: var(--color-error); color: #fff; }
+
+/* A visible, on-brand focus ring for keyboard navigation - buttons, links,
+   inputs and selects all pick this up automatically. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
 
 table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 0.75rem;
   font-size: 0.92rem;
+}
+
+/* Wraps tables with several fixed-width form controls per row (e.g. Kit
+   Inventory) so those controls can scroll horizontally within the table on
+   narrow screens instead of forcing the whole page wider than the viewport. */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 th, td {
@@ -143,6 +196,11 @@ th, td {
 }
 
 th { color: var(--color-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; }
+
+/* For a table column that's just an action button/icon with no real content
+   - let it shrink to its content's width instead of sharing equally in
+   whatever space is left over (e.g. Basket's Remove column). */
+.col-tight { width: 1%; white-space: nowrap; }
 
 td.actions { display: flex; gap: 0.4rem; align-items: center; }
 td.actions form { display: inline; }
@@ -159,7 +217,7 @@ td.actions form { display: inline; }
 }
 
 .flash-success { background: #e4f4e9; color: var(--color-success); border: 1px solid #b9e3c6; }
-.flash-error { background: #fbe9e7; color: var(--color-error); border: 1px solid #f1c4bf; }
+.flash-error { background: #fdece3; color: var(--color-error-text); border: 1px solid #f4c9ab; }
 
 .badge {
   display: inline-block;
@@ -171,12 +229,278 @@ td.actions form { display: inline; }
 }
 
 .badge-approved { background: #e4f4e9; color: var(--color-success); }
-.badge-denied { background: #fbe9e7; color: var(--color-error); }
+.badge-denied { background: #fdece3; color: var(--color-error-text); }
+.badge-collected { background: #e6edfb; color: var(--color-info); }
+.badge-archived { background: #eef0ee; color: var(--color-muted); }
+.badge-out { background: #fdf1de; color: #92600a; }
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+.plain-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.75rem;
+}
+
+.plain-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.9rem;
+}
+
+.plain-list form { margin: 0; }
+
+h3 { font-size: 1rem; margin: 0 0 0.5rem; }
+
+.basket-add-form {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+/* A -/value/+ stepper instead of a bare <input type="number">: the browser's
+   native spinner arrows are only ~12-14px wide (fiddly with a mouse, hidden
+   entirely on Safari until hover, unusable on touch), whereas these two
+   buttons are real, full-sized tap targets either side of the number. */
+.qty-stepper {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.qty-stepper input {
+  width: 2.75rem;
+  border: none;
+  border-left: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border);
+  border-radius: 0;
+  text-align: center;
+  padding: 0.4rem 0.25rem;
+  -moz-appearance: textfield;
+}
+
+.qty-stepper input::-webkit-outer-spin-button,
+.qty-stepper input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.qty-step {
+  border: none;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1;
+  width: 2.1rem;
+  min-height: 2.1rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.qty-step:hover { background: var(--color-border); }
+
+.request-group {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+  margin-bottom: 1rem;
+}
+
+.request-group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Rows hidden by the category/subcategory filter JS must stay hidden even
+   though the mobile rule below sets `tr { display: block }` (a same-priority
+   author rule would otherwise beat the browser's default [hidden] style). */
+tr[hidden] { display: none; }
+
+.kit-row:hover,
+tbody tr:hover { background: var(--color-bg); }
+
+/* Brief inline highlight on a basket row right after its quantity is saved,
+   so the confirmation isn't only visible in the corner toast - you see the
+   exact row you just changed acknowledge the save. */
+@keyframes row-saved-flash {
+  from { background-color: #e4f4e9; }
+  to { background-color: transparent; }
+}
+
+.row-flash-saved { animation: row-saved-flash 900ms ease; }
+
+.toast-container {
+  position: fixed;
+  bottom: 1.25rem;
+  right: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 1000;
+  max-width: min(90vw, 320px);
+  /* The container's box spans down to page content below it even where
+     there's no visible toast, which was blocking clicks on buttons
+     underneath. Only the toast itself should intercept clicks. */
+  pointer-events: none;
+}
+
+.toast {
+  padding: 0.7rem 1rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  color: #fff;
+  background: var(--color-text);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  pointer-events: auto;
+}
+
+.toast-visible { opacity: 1; transform: translateY(0); }
+.toast-success { background: var(--color-success); }
+.toast-error { background: var(--color-error); }
+
+/* Pill-style sub-navigation shown at the top of every admin page, so moving
+   between Pending Requests / Kit Inventory / Item Groups / etc. doesn't mean
+   going all the way back to the dashboard each time. */
+.admin-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 1.5rem;
+}
+
+.admin-subnav-link {
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  text-decoration: none;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.admin-subnav-link:hover { background: var(--color-bg); }
+.admin-subnav-link.active { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+
+/* Filter chips: a row of tappable buttons for picking one subcategory,
+   instead of a <select> dropdown - every option is visible and one click
+   picks it, rather than opening a menu to find it. Same pill look as
+   .admin-subnav-link so the two filtering patterns in the app feel
+   consistent, but these are plain buttons (no navigation), not links. */
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.filter-chip {
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.filter-chip:hover { background: var(--color-bg); }
+.filter-chip.active { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+
+/* Category cards used to browse the kit store by category (both the member
+   request page and the admin inventory page), instead of one long combined
+   list of every item in the store. */
+.category-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.category-card {
+  display: block;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+  text-decoration: none;
+  color: var(--color-text);
+  background: var(--color-card);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.category-card:hover { border-color: var(--color-primary); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06); }
+.category-card h3 { margin: 0 0 0.35rem; font-size: 1.05rem; }
+.category-card .count { color: var(--color-muted); font-size: 0.85rem; }
+
+/* Small navigation cards on the admin dashboard, linking out to each
+   management page with a live count so the dashboard itself stays a quick
+   overview rather than the page that tries to show everything at once. */
+.dashboard-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.dashboard-link-card {
+  display: block;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+  text-decoration: none;
+  background: var(--color-card);
+  color: var(--color-text);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.dashboard-link-card:hover { border-color: var(--color-primary); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06); }
+.dashboard-link-card .count { display: block; font-size: 1.5rem; font-weight: 700; color: var(--color-primary); }
+.dashboard-link-card .label { color: var(--color-muted); font-size: 0.85rem; }
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  color: var(--color-primary);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.back-link:hover { text-decoration: underline; }
 
 @media (max-width: 600px) {
+  .toast-container { left: 1rem; right: 1rem; max-width: none; }
   .header-inner { flex-direction: column; gap: 0.5rem; align-items: flex-start; }
   table, thead, tbody, th, td, tr { display: block; }
   thead { display: none; }
   td { border: none; padding: 0.25rem 0; }
+  /* Once thead is hidden, a bare number (e.g. Kit Inventory's Available/Total
+     columns) has no label left to explain what it means - restore it from the
+     data-label attribute set on the cell in the template. */
+  td[data-label]::before {
+    content: attr(data-label) ": ";
+    font-weight: 600;
+    color: var(--color-muted);
+  }
   tr { padding-bottom: 0.75rem; border-bottom: 1px solid var(--color-border); }
+  .two-col { grid-template-columns: 1fr; }
 }

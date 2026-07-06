@@ -4,10 +4,12 @@ A Flask web app for Cardiff University Mountaineering Club to track kit (gear) i
 
 ## Features
 
-- **Public request form** (`/request`) — any member can request an item, no login needed.
-- **Committee sign-in/out page** (`/sign-in-out`) — password-protected. Sign kit out to a borrower, sign it back in, see what's currently out.
-- **Admin page** (`/admin`) — password-protected. Add/edit/delete kit items, approve or deny member requests.
+- **Kit basket** (`/request` to browse, `/basket` to review & submit) — any member can browse kit by category/subcategory, add multiple items (and quantities) to a session-stored basket — like a web shop cart — then check out in one go by entering their name/email/notes. No login needed. "Can't find it?" adds a free-text item for anything not in the store yet.
+- **Committee sign-in/out page** (`/sign-in-out`) — password-protected. Category/subcategory filters narrow down the item picker, then sign kit out to a borrower and sign it back in.
+- **Admin page** (`/admin`) — password-protected. Manage categories and subcategories (two-level, e.g. Hardware → Single Rope), add/edit/delete kit items, and review requests grouped by the basket they were submitted in — with an "Approve All / Deny All" shortcut, or resolve items individually. Each item's purchase date is only ever shown here, not on the public or sign-in/out pages.
 - Single shared committee password (set in `.env`) gates the two committee pages.
+
+> **Schema note:** kit items now belong to a category → subcategory (e.g. Hardware → Static Rope) instead of a free-text category, and the old "condition" field has been removed. `ItemRequest` also gained a `request_group` column so items from the same basket checkout are linked together. If you've already run the app once under an older schema, delete `instance/kitstore.db` and re-run `python seed_data.py` — SQLAlchemy's `create_all()` only creates missing tables, it doesn't migrate existing ones.
 
 ## Required tools
 

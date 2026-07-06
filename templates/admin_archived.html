@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Archived Items{% endblock %}
+{% block content %}
+  <h1>Archived Items</h1>
+  {% include "_admin_nav.html" %}
+
+  <section class="card">
+    <p class="empty-state">These have loan history so can't be permanently deleted, but they're hidden from the catalogue and sign-out pages. Restore one if it needs to come back into service.</p>
+    {% if archived_items %}
+      <table>
+        <thead><tr><th>Name</th><th>Category</th><th>Subcategory</th><th></th></tr></thead>
+        <tbody>
+          {% for item in archived_items %}
+          <tr>
+            <td>{{ item.name }} <span class="badge badge-archived">Archived</span></td>
+            <td>{{ item.category.name if item.category else '' }}</td>
+            <td>{{ item.subcategory.name if item.subcategory else '' }}</td>
+            <td class="actions">
+              <form method="post" action="{{ url_for('restore_item', item_id=item.id) }}">
+                <button type="submit" class="btn btn-small btn-success">Restore</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="empty-state">No archived items.</p>
+    {% endif %}
+  </section>
+{% endblock %}

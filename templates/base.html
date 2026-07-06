@@ -12,6 +12,7 @@
       <a class="brand" href="{{ url_for('home') }}">CUMC Kit Store</a>
       <nav>
         <a href="{{ url_for('request_kit') }}">Request Kit</a>
+        <a href="{{ url_for('view_basket') }}">Basket<span id="basket-count-badge"{% if not basket_count %} hidden{% endif %}> ({{ basket_count }})</span></a>
         {% if session.get('is_committee') %}
           <a href="{{ url_for('sign_in_out') }}">Sign In/Out</a>
           <a href="{{ url_for('admin') }}">Admin</a>
@@ -40,6 +41,8 @@
   <footer class="site-footer">
     <div class="container">Cardiff University Mountaineering Club &mdash; Kit Store Tracker</div>
   </footer>
+
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
 
   <script src="{{ url_for('static', filename='js/main.js') }}"></script>
   {% block scripts %}{% endblock %}

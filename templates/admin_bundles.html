@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Kit Bundles{% endblock %}
+{% block content %}
+  <h1>Kit Bundles</h1>
+  {% include "_admin_nav.html" %}
+
+  <section class="card">
+    <p class="empty-state">Group several distinct items together so members can request them all in one go &mdash; e.g. a &ldquo;Trad Rack&rdquo; of nuts, cams and hexes, or a kit list saved for a specific trip.</p>
+
+    {% if bundles %}
+      {% for bundle in bundles %}
+        <div class="request-group">
+          <div class="request-group-header">
+            <div>
+              <strong>{{ bundle.name }}</strong>
+              {% if bundle.description %}<br><small>{{ bundle.description }}</small>{% endif %}
+            </div>
+            <form method="post" action="{{ url_for('delete_bundle', bundle_id=bundle.id) }}" onsubmit="return confirm('Delete bundle {{ bundle.name }}? This won\'t delete the items themselves.');">
+              <button type="submit" class="btn btn-small btn-danger">Delete Bundle</button>
+            </form>
+          </div>
+
+          {% if bundle.lines %}
+            <table>
+              <thead><tr><th>Item</th><th>Qty</th><th></th></tr></thead>
+              <tbody>
+                {% for line in bundle.lines %}
+                <tr>
+                  <td>{{ line.item.name }}{% if not line.item.active %} <span class="badge badge-archived">Archived</span>{% endif %}</td>
+                  <td>{{ line.quantity }}</td>
+                  <td class="actions">
+                    <form method="post" action="{{ url_for('delete_bundle_line', bundle_id=bundle.id, line_id=line.id) }}">
+                      <button type="submit" class="btn btn-small btn-danger">Remove</button>
+                    </form>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <p class="empty-state">No items in this bundle yet.</p>
+          {% endif %}
+
+          <form method="post" action="{{ url_for('add_bundle_line', bundle_id=bundle.id) }}" class="inline-form" style="margin-top:0.75rem;">
+            <div>
+              <label for="bundle-{{ bundle.id }}-filter-category">Category</label>
+              <select id="bundle-{{ bundle.id }}-filter-category">
+                <option value="">All categories</option>
+                {% for cat in categories %}<option value="{{ cat.id }}">{{ cat.name }}</option>{% endfor %}
+              </select>
+            </div>
+            <div>
+              <label for="bundle-{{ bundle.id }}-filter-subcategory">Subcategory</label>
+              <select id="bundle-{{ bundle.id }}-filter-subcategory">
+                <option value="">All subcategories</option>
+                {% for sub in subcategories %}<option value="{{ sub.id }}" data-category-id="{{ sub.category_id }}">{{ sub.name }}</option>{% endfor %}
+              </select>
+            </div>
+            <div>
+              <label for="bundle-{{ bundle.id }}-item_id">Item</label>
+              <select id="bundle-{{ bundle.id }}-item_id" name="item_id" required>
+                <option value="" disabled selected data-subcategory-id="">Select&hellip;</option>
+                {% for item in items %}
+                  <option value="{{ item.id }}" data-subcategory-id="{{ item.subcategory_id }}">{{ item.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label for="bundle-{{ bundle.id }}-quantity">Quantity</label>
+              <div class="qty-stepper">
+                <button type="button" class="qty-step qty-step-down" aria-label="Decrease quantity">&minus;</button>
+                <input type="number" id="bundle-{{ bundle.id }}-quantity" name="quantity" min="1" value="1" inputmode="numeric">
+                <button type="button" class="qty-step qty-step-up" aria-label="Increase quantity">+</button>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-small btn-primary">Add to Bundle</button>
+          </form>
+        </div>
+      {% endfor %}
+    {% else %}
+      <p class="empty-state">No bundles yet &mdash; create one below.</p>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('add_bundle') }}" class="inline-form">
+      <div>
+        <label for="new_bundle_name">New bundle name</label>
+        <input type="text" id="new_bundle_name" name="name" placeholder="e.g. Trad Rack">
+      </div>
+      <div>
+        <label for="new_bundle_description">Description <small>(optional)</small></label>
+        <input type="text" id="new_bundle_description" name="description" placeholder="e.g. Full set of nuts, cams and hexes">
+      </div>
+      <button type="submit" class="btn btn-small btn-primary">Create Bundle</button>
+    </form>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    {% for bundle in bundles %}
+      initCascade(
+        "bundle-{{ bundle.id }}-filter-category",
+        "bundle-{{ bundle.id }}-filter-subcategory",
+        "bundle-{{ bundle.id }}-item_id"
+      );
+    {% endfor %}
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,9 @@
+<nav class="admin-subnav">
+  <a href="{{ url_for('admin') }}" class="admin-subnav-link{{ ' active' if active_tab == 'pending' else '' }}">Pending Requests</a>
+  <a href="{{ url_for('admin_inventory') }}" class="admin-subnav-link{{ ' active' if active_tab == 'inventory' else '' }}">Kit Inventory</a>
+  <a href="{{ url_for('admin_groups') }}" class="admin-subnav-link{{ ' active' if active_tab == 'groups' else '' }}">Item Groups</a>
+  <a href="{{ url_for('admin_bundles') }}" class="admin-subnav-link{{ ' active' if active_tab == 'bundles' else '' }}">Kit Bundles</a>
+  <a href="{{ url_for('admin_categories') }}" class="admin-subnav-link{{ ' active' if active_tab == 'categories' else '' }}">Categories</a>
+  <a href="{{ url_for('admin_archived') }}" class="admin-subnav-link{{ ' active' if active_tab == 'archived' else '' }}">Archived</a>
+  <a href="{{ url_for('admin_resolved') }}" class="admin-subnav-link{{ ' active' if active_tab == 'resolved' else '' }}">Resolved Requests</a>
+</nav>

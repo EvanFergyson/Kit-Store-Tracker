@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Categories{% endblock %}
+{% block content %}
+  <h1>Categories</h1>
+  {% include "_admin_nav.html" %}
+
+  <section class="card">
+    <div class="two-col">
+      <div>
+        <h3>Categories</h3>
+        {% if categories %}
+          <ul class="plain-list">
+            {% for cat in categories %}
+              <li>
+                {{ cat.name }}
+                <form method="post" action="{{ url_for('delete_category', category_id=cat.id) }}" onsubmit="return confirm('Delete category {{ cat.name }}?');">
+                  <button type="submit" class="btn btn-small btn-danger">Delete</button>
+                </form>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="empty-state">No categories yet.</p>
+        {% endif %}
+        <form method="post" action="{{ url_for('add_category') }}" class="inline-form">
+          <label for="new_category_name">New category</label>
+          <input type="text" id="new_category_name" name="name" placeholder="e.g. Hardware">
+          <button type="submit" class="btn btn-small btn-primary">Add</button>
+        </form>
+      </div>
+
+      <div>
+        <h3>Subcategories</h3>
+        {% if subcategories %}
+          <ul class="plain-list">
+            {% for sub in subcategories %}
+              <li>
+                {{ sub.name }} <small>({{ sub.category.name }})</small>
+                <form method="post" action="{{ url_for('delete_subcategory', subcategory_id=sub.id) }}" onsubmit="return confirm('Delete subcategory {{ sub.name }}?');">
+                  <button type="submit" class="btn btn-small btn-danger">Delete</button>
+                </form>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="empty-state">No subcategories yet.</p>
+        {% endif %}
+        {% if categories %}
+          <form method="post" action="{{ url_for('add_subcategory') }}" class="inline-form">
+            <label for="new_subcategory_name">New subcategory</label>
+            <input type="text" id="new_subcategory_name" name="name" placeholder="e.g. Single Rope">
+            <label for="new_subcategory_category">Under category</label>
+            <select id="new_subcategory_category" name="category_id">
+              {% for cat in categories %}<option value="{{ cat.id }}">{{ cat.name }}</option>{% endfor %}
+            </select>
+            <button type="submit" class="btn btn-small btn-primary">Add</button>
+          </form>
+        {% else %}
+          <p class="empty-state">Add a category first.</p>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if mode == 'edit' else 'Add' }} Kit Item{% endblock %}
+{% block content %}
+  {% if mode == 'edit' %}
+    <a class="back-link" href="{{ url_for('admin_inventory_category', category_id=item.subcategory.category_id) }}">&larr; {{ item.subcategory.category.name }}</a>
+  {% elif preselect_category_id %}
+    <a class="back-link" href="{{ url_for('admin_inventory_category', category_id=preselect_category_id) }}">&larr; Back</a>
+  {% else %}
+    <a class="back-link" href="{{ url_for('admin_inventory') }}">&larr; Kit Inventory</a>
+  {% endif %}
+
+  <h1>{{ 'Edit' if mode == 'edit' else 'Add' }} Kit Item</h1>
+  {% include "_admin_nav.html" %}
+
+  {% if mode == 'edit' or categories %}
+  <section class="card narrow">
+    <form method="post" action="{{ url_for('edit_item', item_id=item.id) if mode == 'edit' else url_for('add_item') }}">
+      {% if mode != 'edit' %}
+        <input type="hidden" name="preselect_category_id" value="{{ preselect_category_id or '' }}">
+      {% endif %}
+
+      <label for="name">Name</label>
+      <input type="text" id="name" name="name" value="{{ item.name if mode == 'edit' else '' }}" required>
+
+      <label for="subcategory_id">Subcategory</label>
+      <select id="subcategory_id" name="subcategory_id" required>
+        {% if mode != 'edit' %}<option value="" disabled selected>Select&hellip;</option>{% endif %}
+        {% for cat in categories %}
+          <optgroup label="{{ cat.name }}">
+            {% for sub in cat.subcategories %}
+              <option value="{{ sub.id }}" {% if mode == 'edit' and sub.id == item.subcategory_id %}selected{% endif %}>{{ sub.name }}</option>
+            {% endfor %}
+          </optgroup>
+        {% endfor %}
+      </select>
+
+      <label for="group_id">Group <small>(optional)</small></label>
+      <select id="group_id" name="group_id">
+        <option value="">None (standalone item)</option>
+        {% for group in item_groups %}
+          <option value="{{ group.id }}" {% if mode == 'edit' and item.group_id == group.id %}selected{% endif %}>{{ group.name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="location">Storage location</label>
+      <input type="text" id="location" name="location" value="{{ (item.location or '') if mode == 'edit' else '' }}">
+
+      <label for="quantity_total">Quantity</label>
+      <div class="qty-stepper">
+        <button type="button" class="qty-step qty-step-down" aria-label="Decrease quantity">&minus;</button>
+        <input type="number" id="quantity_total" name="quantity_total" min="1" value="{{ item.quantity_total if mode == 'edit' else 1 }}" inputmode="numeric">
+        <button type="button" class="qty-step qty-step-up" aria-label="Increase quantity">+</button>
+      </div>
+      {% if mode == 'edit' %}
+        <p class="empty-state">{{ item.quantity_available }} of {{ item.quantity_total }} currently available.</p>
+      {% endif %}
+
+      <label for="purchase_date">Purchase date <small>(admin only)</small></label>
+      <input type="date" id="purchase_date" name="purchase_date" value="{{ item.purchase_date.isoformat() if mode == 'edit' and item.purchase_date else '' }}">
+
+      <label for="description">Description</label>
+      <textarea id="description" name="description" rows="3">{{ (item.description or '') if mode == 'edit' else '' }}</textarea>
+
+      <button type="submit" class="btn btn-primary">{{ 'Save Changes' if mode == 'edit' else 'Add Item' }}</button>
+    </form>
+  </section>
+  {% else %}
+    <p class="empty-state">Add a category and subcategory first, from Categories.</p>
+  {% endif %}
+{% endblock %}
