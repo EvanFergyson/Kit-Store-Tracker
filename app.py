@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 from functools import wraps
 
-from flask import Flask, abort, flash, redirect, render_template, request, session, url_for
+from flask import Flask, abort, flash, redirect, render_template, request, send_from_directory, session, url_for
 from sqlalchemy import func, inspect, or_, text
 from sqlalchemy.schema import CreateColumn
 
@@ -257,6 +257,15 @@ def register_routes(app):
     @app.route("/")
     def home():
         return render_template("home.html")
+
+    # Some browsers/crawlers request /favicon.ico at the site root regardless
+    # of the <link rel="icon"> tag in base.html - without this route that
+    # request 404s even though the real icon file exists under /static/img.
+    @app.route("/favicon.ico")
+    def favicon():
+        return send_from_directory(
+            os.path.join(app.static_folder, "img"), "favicon.ico", mimetype="image/vnd.microsoft.icon"
+        )
 
     @app.route("/request")
     def request_kit():
