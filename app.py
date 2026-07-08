@@ -33,15 +33,16 @@ def create_app():
 
 
 def _ensure_schema():
-    """Add any model columns that don't exist yet on a database that was
-    created before they were added to the model. db.create_all() only
-    creates missing TABLES - it never alters a table that already exists -
-    so a genuinely new column on an existing table (like Category.
-    member_visible) needs its own small step here instead of silently doing
-    nothing on every deploy. This intentionally only handles "add a column
-    with a server-side default"; anything more involved (renaming/dropping a
-    column, changing a type) should be done by hand against the database
-    directly rather than extending this function.
+    """Bring an existing database's schema up to date with models.py.
+    db.create_all() only creates missing TABLES - it never alters a table
+    that already exists - so a genuinely new column (like Category.
+    member_visible), or a changed constraint on an existing column (like
+    KitBundleLine.item_id becoming nullable), needs its own small step here
+    instead of silently doing nothing on every deploy. Keep each step
+    idempotent (check before altering) and narrow (exactly the change that
+    happened, not a general migration tool) - anything bigger than that
+    (renaming a column, changing a type) should still be done by hand against
+    the database directly.
     """
     inspector = inspect(db.engine)
     existing_columns = {col["name"] for col in inspector.get_columns("categories")}
@@ -50,21 +51,37 @@ def _ensure_schema():
         with db.engine.begin() as conn:
             conn.execute(text(f"ALTER TABLE categories ADD COLUMN {column_ddl}"))
 
-    bundle_line_columns = {col["name"] for col in inspector.get_columns("kit_bundle_lines")}
+    bundle_line_columns = {col["name"]: col for col in inspector.get_columns("kit_bundle_lines")}
     if "group_id" not in bundle_line_columns:
         column_ddl = CreateColumn(KitBundleLine.__table__.columns["group_id"]).compile(dialect=db.engine.dialect)
         with db.engine.begin() as conn:
             conn.execute(text(f"ALTER TABLE kit_bundle_lines ADD COLUMN {column_ddl}"))
-        # item_id also changed from NOT NULL to nullable (a bundle line can
-        # now point at a group instead of a specific item) - that's a column
-        # *alteration*, not an added column, so it's outside what this
-        # function does (see its docstring). A brand new database created
-        # from this version of models.py gets it nullable from the start via
-        # db.create_all(); a database that already existed before this
-        # change would need one manual, one-off command run against it:
-        #   ALTER TABLE kit_bundle_lines ALTER COLUMN item_id DROP NOT NULL;
-        # (SQLite doesn't support ALTER COLUMN at all - drop and recreate the
-        # local instance/kitstore.db file instead, since it's dev-only data.)
+        # Re-read the columns now group_id exists, so the item_id nullability
+        # check just below sees a fresh/accurate picture on this same boot.
+        bundle_line_columns = {col["name"]: col for col in inspect(db.engine).get_columns("kit_bundle_lines")}
+
+    # item_id also changed from NOT NULL to nullable (a bundle line can now
+    # point at a group instead of a specific item). A brand new database
+    # created from this version of models.py gets it nullable from the start
+    # via db.create_all(), but a database that already existed before this
+    # change (like production, mid-deploy, the first time this ran) still has
+    # the old constraint at the database level - seed_data.py crashed on
+    # exactly this, inserting a group-only line with item_id=None. Postgres
+    # can drop a NOT NULL constraint as a quick in-place catalog change, so
+    # it's safe to just do it here rather than requiring a manual command.
+    item_id_col = bundle_line_columns.get("item_id")
+    if item_id_col is not None and not item_id_col["nullable"]:
+        if db.engine.dialect.name == "postgresql":
+            with db.engine.begin() as conn:
+                conn.execute(text("ALTER TABLE kit_bundle_lines ALTER COLUMN item_id DROP NOT NULL"))
+        else:
+            # SQLite doesn't support ALTER COLUMN at all. Only matters for a
+            # local dev database created before this change - delete
+            # instance/kitstore.db and let it recreate from scratch instead.
+            print(
+                "kit_bundle_lines.item_id is still NOT NULL and this isn't Postgres - "
+                "delete instance/kitstore.db and restart the app to recreate it from scratch."
+            )
 
 
 def login_required(view_func):
