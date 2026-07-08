@@ -8,14 +8,25 @@
     <div class="two-col">
       <div>
         <h3>Categories</h3>
+        <p class="empty-state">Hidden categories stay fully visible and editable here - they're just left off the member-facing Request Kit pages.</p>
         {% if categories %}
           <ul class="plain-list">
             {% for cat in categories %}
               <li>
-                {{ cat.name }}
-                <form method="post" action="{{ url_for('delete_category', category_id=cat.id) }}" onsubmit="return confirm('Delete category {{ cat.name }}?');">
-                  <button type="submit" class="btn btn-small btn-danger">Delete</button>
-                </form>
+                <span>
+                  {{ cat.name }}
+                  {% if not cat.member_visible %}<span class="badge badge-archived">Hidden from members</span>{% endif %}
+                </span>
+                <span class="actions">
+                  <form method="post" action="{{ url_for('toggle_category_visibility', category_id=cat.id) }}">
+                    <button type="submit" class="btn btn-small btn-secondary">
+                      {{ "Show to members" if not cat.member_visible else "Hide from members" }}
+                    </button>
+                  </form>
+                  <form method="post" action="{{ url_for('delete_category', category_id=cat.id) }}" onsubmit="return confirm('Delete category {{ cat.name }}?');">
+                    <button type="submit" class="btn btn-small btn-danger">Delete</button>
+                  </form>
+                </span>
               </li>
             {% endfor %}
           </ul>

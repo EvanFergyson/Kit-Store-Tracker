@@ -13,10 +13,11 @@ page once they know the real number.
 
 Run with:  python seed_data.py
 """
+
 from datetime import datetime
 
 from app import create_app
-from models import Category, KitItem, SignOut, Subcategory, db
+from models import Category, ItemGroup, KitBundle, KitBundleLine, KitItem, SignOut, Subcategory, db
 
 # category name -> list of subcategory names, in the order the club's
 # spreadsheet lists them.
@@ -39,7 +40,7 @@ CATALOG = {
         "Nuts",
         "Hexes",
         "Cams",
-        "Mallions",
+        "Maillons",
         "Nut Keys",
         "Ohm",
         "Assisted Breaking",
@@ -67,136 +68,295 @@ CATALOG = {
     ],
 }
 
-# (item name, category name, subcategory name, quantity_total, quantity_available, description)
+# Category names in here start out hidden from the member-facing Request Kit
+# pages (Category.member_visible = False) - same setting as the "Hide from
+# members" toggle on the admin Categories page, just set up front instead of
+# clicked after the fact. This only applies the first time a category is
+# created: re-running the script never touches member_visible on a category
+# that already exists, so a committee member's later toggle (either
+# direction) always wins over whatever's listed here.
+HIDDEN_CATEGORIES = {"Cage"}
+
+# Every item has a short, stable `key` (first element of each tuple) used to
+# reference it from ITEM_GROUPS/BUNDLES below, instead of repeating its full
+# name string. Names/descriptions can be freely edited without breaking any
+# group or bundle, since they're wired up by key, not by matching text -
+# rename an item and every group/bundle it belongs to still finds it.
+# (key, name, category name, subcategory name, quantity_total, quantity_available, description)
 KIT_ITEMS = [
-    ("Beal Antidote 10.2, 47m, Blue", "Soft Items", "Single rope", 1, 1, None),
-    ("70m, Brown/murky", "Soft Items", "Single rope", 1, 1, None),
-    ("Another Brown 70m", "Soft Items", "Single rope", 1, 1, None),
-    ("Mammut, 50m, Green        Chopped", "Soft Items", "Single rope", 1, 1, None),
-    ("Beal 10, one of them is 42m, Yellow", "Soft Items", "Single rope", 2, 2, None),
-    ("Mammut 60m, Orange", "Soft Items", "Single rope", 1, 1, None),
-    ("Edelweiss, 80m, Blue (very soft)", "Soft Items", "Single rope", 1, 1, None),
-    ("60m, white and black", "Soft Items", "Static rope", 1, 1, None),
-    ("30m, white and black", "Soft Items", "Static rope", 1, 0, None),
-    ("30m, white and black (Static rope)", "Soft Items", "Static rope", 1, 0, None),
-    ("15m, white and black", "Soft Items", "Static rope", 1, 0, None),
-    ("Pair of Beal Cobra II Unicore 8.6, 50m, Red+Green", "Soft Items", "Half", 5, 3, None),
-    ("Beal Cobra II Unicore 8.6, 50m, Green", "Soft Items", "Half", 3, 3, None),
-    ("Blue Prussiks, all on screwgates", "Soft Items", "Prussiks", 4, 2, None),
-    ("White and Blue, all on screwgates", "Soft Items", "Daisy chain", 3, 2, None),
-    ("60cm, 2 grey, 1 orange, all on screwgates", "Soft Items", "Slings", 3, 2, None),
-    ("120cm, grey, red, purple, all on screwgates", "Soft Items", "Slings", 7, 6, None),
-    ("240cm, green, blue, purple, all on screwgates", "Soft Items", "Slings", 5, 4, None),
-    ("400cm, blue, all on screwgates", "Soft Items", "Slings", 2, 0, None),
-    ("Petzl, orange and black", "Bouldering", "Bouldering Pads", 1, 1, None),
-    ("Alpkit, red and blue", "Bouldering", "Bouldering Pads", 2, 2, None),
-    ("Ocun, orange and black", "Bouldering", "Bouldering Pads", 1, 1, None),
-    ("Dominator", "Bouldering", "Bouldering Pads", 1, 1, None),
-    ("Black Diamond, Orange Blue", "Bouldering", "Bouldering Pads", 4, 2, None),
-    ("Incubator", "Bouldering", "Bouldering Pads", 1, 0, None),
-    ("Pink Psychi", "Bouldering", "Bouldering Pads", 1, 1, None),
-    ("18cm, silver slings", "Hardwear", "Trad Quickdraws", 20, 18, None),
-    ("22cm, red slings", "Hardwear", "Trad Quickdraws", 1, 1, None),
-    ("cm, green slings", "Hardwear", "Trad Quickdraws", 12, 6, None),
-    ("cm, blue slings", "Hardwear", "Trad Quickdraws", 12, 0, None),
-    ("18cm, Orange/yellow sling", "Hardwear", "Alpine Quickdraws", 10, 7, None),
-    ("DMM Alphas, yellow", "Hardwear", "Sport Quickdraws", 6, 5, None),
-    ("Petzl Djinn, two lengths, orange", "Hardwear", "Sport Quickdraws", 11, 0, None),
-    ("Clog, blue", "Hardwear", "Sport Quickdraws", 1, 0, None),
-    ("DMM Shadow, purple", "Hardwear", "Sport Quickdraws", 9, 4, None),
-    ("Complete 1-11 set of nuts on 2 snapgates", "Hardwear", "Nuts", 10, 3, None),
-    ("Set of offsets, 7-11", "Hardwear", "Nuts", 4, 2, None),
-    ("Microwire", "Hardwear", "Nuts", 0, 0, None),
-    ("DMM set of 4, yellow, red, blue, green", "Hardwear", "Hexes", 7, 3, None),
-    ("5,  Big purp, (1 Black Diamond)", "Hardwear", "Cams", 1, 0, None),
-    ("4, Silver, (1 Black Diamond)", "Hardwear", "Cams", 1, 0, None),
-    ("3, Blue, (3 Black Diamond, 2 DMM)", "Hardwear", "Cams", 5, 3, None),
-    ("2, Gold, (3 Black Diamond, 2 DMM)", "Hardwear", "Cams", 5, 3, None),
-    ("1, Red, (4 Black Diamond)", "Hardwear", "Cams", 4, 2, None),
-    (".75, Green, (4 Black Diamond, 1 DMM)", "Hardwear", "Cams", 5, 2, None),
-    (".5, Small purp, (2 Black Diamond, 2 Wild Country)", "Hardwear", "Cams", 4, 2, None),
-    (".4,  Silver, (2 Black Diamond, 3 DMM)", "Hardwear", "Cams", 5, 3, None),
-    (".3, Blue, (Black Diamond)", "Hardwear", "Cams", 2, 1, None),
-    (".1, Red, (Black Diamond)", "Hardwear", "Cams", 1, 0, None),
-    ("All attatched to a screwgate", "Hardwear", "Mallions", 4, 1, None),
-    ("Various types of nut key, on snapgate", "Hardwear", "Nut Keys", 3, 2, None),
-    ("Elderid, 1st edition", "Hardwear", "Ohm", 1, 1, None),
-    ("Petzl Gri GrI 2, on screwgate", "Hardwear", "Assisted Breaking", 1, 1, None),
-    ("Mammut smart, on screwgate", "Hardwear", "Assisted Breaking", 1, 0, None),
-    ("Various models, all on screwgates", "Hardwear", "ATC", 10, 5, None),
-    ("Figure 8 descender", "Hardwear", "Descenders", 2, 0, None),
-    ("Loose carabiners", "Hardwear", "Locking carabiners", 9, 1, None),
-    ("DMM Brennin and DMM Centre", "Personal Safety", "Harness", 20, 2, None),
-    ("Blue helmets", "Personal Safety", "Helmets", 8, 2, None),
-    ("Light Blue Helmerts", "Personal Safety", "Helmets", 4, 2, None),
-    ("Red helmets", "Personal Safety", "Helmets", 10, 8, None),
-    ("Green Helmets", "Personal Safety", "Helmets", 5, 2, None),
-    ("Green first aid  kits", "Other", "Health and Safety", 5, 5, "Check if in date"),
-    ("Red first aid kits", "Other", "Health and Safety", 3, 3, None),
-    ("Brown bag of first aid gear", "Other", "Health and Safety", 1, 1, None),
-    ("Storm shelters, all fit minimum 4 people", "Other", "Health and Safety", 5, 5, None),
-    ("Guidebooks for Uk, france, spain, etc", "Other", "Books", 62, 57, None),
-    ("OS maps", "Other", "Books", 27, 27, None),
-    ("Climbing shoes", "Other", "Misc Climbing", 4, 0, "spreadsheet quantity was 'Lots'"),
-    ("Clip Sticks", "Other", "Misc Climbing", 2, 2, None),
-    ("Rope tarps and bags", "Other", "Misc Climbing", 5, 5, None),
-    ("Red and yellow haul bags", "Other", "Misc Climbing", 2, 2, None),
-    ("Green rope protector", "Other", "Misc Climbing", 1, 1, None),
-    ("Carpet", "Other", "Misc Climbing", 1, 1, None),
-    ("Walkie Talkies", "Other", "Misc Climbing", 11, 11, None),
-    ("Ice Axes", "Other", "Misc Climbing", 1, 1, "spreadsheet quantity was 'Lots'"),
-    ("Yellow crampons in brown bag", "Other", "Misc Climbing", 1, 1, "spreadsheet quantity was 'Lots'"),
-    ("Table", "Other", "Misc", 1, 1, None),
-    ("pair of crutches", "Other", "Misc", 2, 2, None),
-    ("litter pickers", "Other", "Misc", 6, 6, None),
-    ("Compasses", "Other", "Misc", 1, 1, "quantity wasn't recorded in the spreadsheet"),
-    ("Rope marker", "Other", "Misc", 1, 1, None),
-    ("Electrical Tape", "Other", "Misc", 1, 1, "quantity wasn't recorded in the spreadsheet"),
-    ("Vango Nitestar 250", "Cage", "Sleeping Bag", 1, 1, None),
-    ("Forclaz MT 500", "Cage", "Sleeping Bag", 1, 1, None),
-    ("Blue sleeping bag in blue bag", "Cage", "Sleeping Bag", 1, 1, None),
-    ("Green sleeping bag in blue dry bag", "Cage", "Sleeping Bag", 1, 1, None),
-    ("Self Inflating mat blue", "Cage", "Sleeping Mat", 1, 1, None),
-    ("Peak Oyl Aero MTN: Long", "Cage", "Sleeping Mat", 1, 1, None),
-    ("Blue/Green Foam Mats", "Cage", "Sleeping Mat", 3, 3, None),
-    ("White Folding Table", "Cage", "Table", 3, 3, None),
-    ("Metal Food Contatiner/Bowl", "Cage", "Camping", 1, 1, None),
-    ("Camping Stove, blue", "Cage", "Camping", 6, 6, None),
-    ("White Kettle", "Cage", "Camping", 1, 1, None),
-    ("Washing up bowls", "Cage", "Camping", 7, 7, None),
-    ("Metal Tongs", "Cage", "Camping", 1, 1, None),
-    ("Plastic Spatula", "Cage", "Camping", 1, 1, None),
-    ("Little Saucepan", "Cage", "Camping", 3, 3, None),
-    ("Big Saucepan", "Cage", "Camping", 5, 5, None),
-    ("Mobile Mains Kit", "Cage", "Camping", 1, 1, None),
-    ("Bowl", "Cage", "Camping", 1, 1, None),
-    ("Big Pan", "Cage", "Camping", 3, 3, None),
-    ("Fire Starter Cubes Pack", "Cage", "Camping", 2, 2, None),
-    ("Camping Chairs", "Cage", "Camping", 4, 4, None),
-    ("Grey Tarp in Green Bag", "Cage", "Camping", 1, 1, None),
-    ("Fuel cans", "Cage", "Camping", 8, 8, None),
-    ("Gelert Quickpitch camo pop up", "Cage", "Tent", 1, 1, None),
-    ("Horizon 8 Inner Tent", "Cage", "Tent", 1, 1, None),
-    ("Arpenaz 2+ tent", "Cage", "Tent", 1, 1, None),
-    ("Horizon 8 Outer Tent", "Cage", "Tent", 1, 1, None),
-    ("Vango Beta 250", "Cage", "Tent", 2, 2, None),
-    ("Gelert Horizion Porch, Blue", "Cage", "Tent", 1, 1, None),
-    ("Black Bag of Cricket Balls", "Cage", "Other", 1, 1, None),
-    ("Old CUMC SU Banner", "Cage", "Other", 1, 1, None),
-    ("Orange Frisbee", "Cage", "Other", 1, 1, None),
-    ("Hi-Vis", "Cage", "Other", 10, 10, None),
-    ("AA Emergancy Warning Triangle", "Cage", "Other", 5, 5, None),
-    ("UK Car Sticker", "Cage", "Other", 7, 7, None),
-    ("Ultrasport Slack Line, red, black bag", "Cage", "Other", 1, 1, None),
-    ("Barefoot Slackline, yellow", "Cage", "Other", 1, 1, None),
-    ("Single Use Breathalyzers", "Cage", "Other", 4, 4, None),
-    ("Old CUMC Flag", "Cage", "Other", 1, 1, None),
-    ("Random tent pegs", "Cage", "Other", 1, 1, "spreadsheet quantity was 'Loads'"),
-    ("Random tent poles", "Cage", "Other", 1, 1, "spreadsheet quantity was 'two bags'"),
-    ("Zip ties", "Cage", "Other", 1, 1, "spreadsheet quantity was 'loads'"),
-    ("Red washing up tub", "Cage", "Other", 2, 2, None),
-    ("Bags", "Cage", "Other", 4, 4, None),
-    ("Spare guy lines", "Cage", "Other", 1, 1, None),
+    ("rope_single_beal_47m", "Beal Antidote 10.2, 47m, Blue", "Soft Items", "Single rope", 1, 1, None),
+    ("rope_single_70m_brown_a", "70m, Brown/murky", "Soft Items", "Single rope", 1, 1, None),
+    ("rope_single_70m_brown_b", "Another Brown 70m", "Soft Items", "Single rope", 1, 1, None),
+    ("rope_single_mammut_50m_chopped", "Mammut, 50m, Green Chopped", "Soft Items", "Single rope", 1, 1, None),
+    ("rope_single_beal10_mixed_yellow", "Beal 10, one of them is 42m, Yellow", "Soft Items", "Single rope", 2, 2, None),
+    ("rope_single_mammut_60m_orange", "Mammut 60m, Orange", "Soft Items", "Single rope", 1, 1, None),
+    ("rope_single_edelweiss_80m", "Edelweiss, 80m, Blue (very soft)", "Soft Items", "Single rope", 1, 1, None),
+    ("rope_static_60m", "60m, white and black", "Soft Items", "Static rope", 1, 1, None),
+    ("rope_static_30m_a", "30m, white and black", "Soft Items", "Static rope", 1, 0, None),
+    ("rope_static_30m_b", "30m, white and black (Static rope)", "Soft Items", "Static rope", 1, 0, None),
+    ("rope_static_15m", "15m, white and black", "Soft Items", "Static rope", 1, 0, None),
+    ("rope_half_beal_pair_50m", "Pair of Beal Cobra II Unicore 8.6, 50m, Red+Green", "Soft Items", "Half", 5, 3, None),
+    ("rope_half_beal_single_50m", "Beal Cobra II Unicore 8.6, 50m, Green", "Soft Items", "Half", 3, 3, None),
+    ("prussiks_blue", "Blue Prussiks, all on screwgates", "Soft Items", "Prussiks", 4, 2, None),
+    ("daisy_chain_white_blue", "White and Blue, all on screwgates", "Soft Items", "Daisy chain", 3, 2, None),
+    ("sling_60cm", "60cm", "Soft Items", "Slings", 3, 2, "2 grey, 1 orange, all on screwgates"),
+    ("sling_120cm", "120cm", "Soft Items", "Slings", 7, 6, "grey, red, purple, all on screwgates"),
+    ("sling_240cm", "240cm", "Soft Items", "Slings", 5, 4, "green, blue, purple, all on screwgates"),
+    ("sling_400cm", "400cm", "Soft Items", "Slings", 2, 0, "blue, all on screwgates"),
+    ("pad_petzl", "Petzl", "Bouldering", "Bouldering Pads", 1, 1, "orange and black"),
+    ("pad_alpkit", "Alpkit", "Bouldering", "Bouldering Pads", 2, 2, "red and blue"),
+    ("pad_ocun", "Ocun", "Bouldering", "Bouldering Pads", 1, 1, "orange and black"),
+    ("pad_ocun_dominator", "Ocun Dominator", "Bouldering", "Bouldering Pads", 1, 1, None),
+    ("pad_ocun_incubator", "Ocun Incubator", "Bouldering", "Bouldering Pads", 1, 0, None),
+    ("pad_black_diamond", "Black Diamond", "Bouldering", "Bouldering Pads", 4, 2, "Orange Blue"),
+    ("pad_psychi", "Psychi", "Bouldering", "Bouldering Pads", 1, 1, "Pink"),
+    ("qd_trad_18cm_silver", "18cm, silver slings", "Hardwear", "Trad Quickdraws", 20, 18, None),
+    ("qd_trad_22cm_red", "22cm, red slings", "Hardwear", "Trad Quickdraws", 1, 1, None),
+    ("qd_trad_18cm_green", "18 cm", "Hardwear", "Trad Quickdraws", 12, 6, "green slings"),
+    ("qd_trad_18cm_blue", "18 cm", "Hardwear", "Trad Quickdraws", 12, 0, "blue slings"),
+    ("qd_alpine_18cm", "18cm", "Hardwear", "Alpine Quickdraws", 10, 7, "Orange/yellow sling"),
+    ("qd_sport_dmm_alpha", "DMM Alphas", "Hardwear", "Sport Quickdraws", 6, 5, "yellow"),
+    ("qd_sport_petzl_djinn", "Petzl Djinn", "Hardwear", "Sport Quickdraws", 11, 0, "two lengths, orange"),
+    ("qd_sport_clog", "Clog", "Hardwear", "Sport Quickdraws", 1, 0, "blue"),
+    ("qd_sport_dmm_shadow", "DMM Shadow", "Hardwear", "Sport Quickdraws", 9, 4, "purple"),
+    ("nuts_complete_set", "Wall Nuts 1-11 ", "Hardwear", "Nuts", 10, 3, "Complete 1-11 set of nuts on 2 snapgates"),
+    ("nuts_offset_set", "Offset Nuts 7-11", "Hardwear", "Nuts", 4, 2, "Complete set of offsets, 7-11, on 1 bent snapgate"),
+    # ("nuts_microwire", "Microwire", "Hardwear", "Nuts", 0, 0, None),
+    ("hexes_dmm_set4", "Torque Nuts 1-4", "Hardwear", "Hexes", 7, 3, "DMM set of 4, yellow, red, blue, green"),
+    ("cam_5", "5 - Big purp", "Hardwear", "Cams", 1, 0, "Black Diamond: 1"),
+    ("cam_4", "4 - Silver", "Hardwear", "Cams", 1, 0, "Black Diamond: 1"),
+    ("cam_3", "3 - Blue", "Hardwear", "Cams", 5, 3, "Black Diamond: 3, DMM: 2"),
+    ("cam_2", "2 - Gold", "Hardwear", "Cams", 5, 3, "Black Diamond: 3, DMM: 2"),
+    ("cam_1", "1 - Red", "Hardwear", "Cams", 4, 2, "Black Diamond: 4"),
+    ("cam_075", ".75 - Green", "Hardwear", "Cams", 5, 2, "Black Diamond: 4, DMM: 1"),
+    ("cam_05", ".5 - Purple", "Hardwear", "Cams", 4, 2, "Black Diamond: 2, Wild Country: 2"),
+    ("cam_04", ".4 - Silver", "Hardwear", "Cams", 5, 3, "Black Diamond: 2, DMM: 3"),
+    ("cam_03", ".3 - Blue", "Hardwear", "Cams", 2, 1, "Black Diamond: 1"),
+    ("cam_01", ".1 - Red", "Hardwear", "Cams", 1, 0, "Black Diamond: 1"),
+    ("maillons", "Maillons", "Hardwear", "Maillons", 4, 1, "All attatched to a screwgate"),
+    ("nut_keys", "Nut Keys", "Hardwear", "Nut Keys", 3, 2, "Various types of nut key, on snapgate"),
+    ("ohm_elderid", "Elderid Ohm", "Hardwear", "Ohm", 1, 1, "1st edition"),
+    ("abd_petzl_grigri", "Petzl Gri GrI 2", "Hardwear", "Assisted Breaking", 1, 1, "On screwgate"),
+    ("abd_mammut_smart", "Mammut smart", "Hardwear", "Assisted Breaking", 1, 0, "On screwgate"),
+    ("atc", "ATC", "Hardwear", "ATC", 10, 5, "Various models, all on screwgates"),
+    ("descender_figure8", "Figure 8 descender", "Hardwear", "Descenders", 2, 0, None),
+    ("locking_carabiners", "Lockers", "Hardwear", "Locking carabiners", 9, 1, "Loose carabiners"),
+    ("harness_dmm", "DMM Brennin and DMM Centre", "Personal Safety", "Harness", 20, 2, None),
+    ("helmet_blue", "Blue helmets", "Personal Safety", "Helmets", 8, 2, None),
+    ("helmet_light_blue", "Light Blue Helmets", "Personal Safety", "Helmets", 4, 2, None),
+    ("helmet_red", "Red Helmets", "Personal Safety", "Helmets", 10, 8, None),
+    ("helmet_green", "Green Helmets", "Personal Safety", "Helmets", 5, 2, None),
+    ("first_aid_green", "Green first aid  kits", "Other", "Health and Safety", 5, 5, "Check if in date"),
+    ("first_aid_red", "Red first aid kits", "Other", "Health and Safety", 3, 3, None),
+    ("first_aid_brown_bag", "Brown bag of first aid gear", "Other", "Health and Safety", 1, 1, None),
+    ("storm_shelters", "Storm shelters, all fit minimum 4 people", "Other", "Health and Safety", 5, 5, None),
+    ("guidebooks", "Guidebooks for Uk, france, spain, etc", "Other", "Books", 62, 57, None),
+    ("os_maps", "OS maps", "Other", "Books", 27, 27, None),
+    ("climbing_shoes", "Climbing shoes", "Other", "Misc Climbing", 4, 0, "spreadsheet quantity was 'Lots'"),
+    ("clip_sticks", "Clip Sticks", "Other", "Misc Climbing", 2, 2, None),
+    ("rope_tarps_bags", "Rope tarps and bags", "Other", "Misc Climbing", 5, 5, None),
+    ("haul_bags", "Red and yellow haul bags", "Other", "Misc Climbing", 2, 2, None),
+    ("rope_protector", "Green rope protector", "Other", "Misc Climbing", 1, 1, None),
+    ("carpet", "Carpet", "Other", "Misc Climbing", 1, 1, None),
+    ("walkie_talkies", "Walkie Talkies", "Other", "Misc Climbing", 11, 11, None),
+    ("ice_axes", "Ice Axes", "Other", "Misc Climbing", 1, 1, "spreadsheet quantity was 'Lots'"),
+    ("crampons", "Yellow crampons in brown bag", "Other", "Misc Climbing", 1, 1, "spreadsheet quantity was 'Lots'"),
+    ("misc_table", "Table", "Other", "Misc", 1, 1, None),
+    ("crutches", "pair of crutches", "Other", "Misc", 2, 2, None),
+    ("litter_pickers", "litter pickers", "Other", "Misc", 6, 6, None),
+    ("compasses", "Compasses", "Other", "Misc", 1, 1, "quantity wasn't recorded in the spreadsheet"),
+    ("rope_marker", "Rope marker", "Other", "Misc", 1, 1, None),
+    ("electrical_tape", "Electrical Tape", "Other", "Misc", 1, 1, "quantity wasn't recorded in the spreadsheet"),
+    ("sleeping_bag_vango", "Vango Nitestar 250", "Cage", "Sleeping Bag", 1, 1, None),
+    ("sleeping_bag_forclaz", "Forclaz MT 500", "Cage", "Sleeping Bag", 1, 1, None),
+    ("sleeping_bag_blue", "Blue sleeping bag in blue bag", "Cage", "Sleeping Bag", 1, 1, None),
+    ("sleeping_bag_green", "Green sleeping bag in blue dry bag", "Cage", "Sleeping Bag", 1, 1, None),
+    ("sleeping_mat_self_inflating", "Self Inflating mat blue", "Cage", "Sleeping Mat", 1, 1, None),
+    ("sleeping_mat_peak_oyl", "Peak Oyl Aero MTN: Long", "Cage", "Sleeping Mat", 1, 1, None),
+    ("sleeping_mat_foam", "Blue/Green Foam Mats", "Cage", "Sleeping Mat", 3, 3, None),
+    ("cage_table", "White Folding Table", "Cage", "Table", 3, 3, None),
+    ("camp_food_container", "Metal Food Contatiner/Bowl", "Cage", "Camping", 1, 1, None),
+    ("camp_stove", "Camping Stove, blue", "Cage", "Camping", 6, 6, None),
+    ("camp_kettle", "White Kettle", "Cage", "Camping", 1, 1, None),
+    ("camp_washing_bowls", "Washing up bowls", "Cage", "Camping", 7, 7, None),
+    ("camp_tongs", "Metal Tongs", "Cage", "Camping", 1, 1, None),
+    ("camp_spatula", "Plastic Spatula", "Cage", "Camping", 1, 1, None),
+    ("camp_saucepan_small", "Little Saucepan", "Cage", "Camping", 3, 3, None),
+    ("camp_saucepan_big", "Big Saucepan", "Cage", "Camping", 5, 5, None),
+    ("camp_mains_kit", "Mobile Mains Kit", "Cage", "Camping", 1, 1, None),
+    ("camp_bowl", "Bowl", "Cage", "Camping", 1, 1, None),
+    ("camp_pan_big", "Big Pan", "Cage", "Camping", 3, 3, None),
+    ("camp_fire_starters", "Fire Starter Cubes Pack", "Cage", "Camping", 2, 2, None),
+    ("camp_chairs", "Camping Chairs", "Cage", "Camping", 4, 4, None),
+    ("camp_tarp", "Grey Tarp in Green Bag", "Cage", "Camping", 1, 1, None),
+    ("camp_fuel_cans", "Fuel cans", "Cage", "Camping", 8, 8, None),
+    ("tent_gelert_quickpitch", "Gelert Quickpitch camo pop up", "Cage", "Tent", 1, 1, None),
+    ("tent_horizon8_inner", "Horizon 8 Inner Tent", "Cage", "Tent", 1, 1, None),
+    ("tent_arpenaz2", "Arpenaz 2+ tent", "Cage", "Tent", 1, 1, None),
+    ("tent_horizon8_outer", "Horizon 8 Outer Tent", "Cage", "Tent", 1, 1, None),
+    ("tent_vango_beta250", "Vango Beta 250", "Cage", "Tent", 2, 2, None),
+    ("tent_gelert_porch", "Gelert Horizion Porch, Blue", "Cage", "Tent", 1, 1, None),
+    ("other_cricket_balls", "Black Bag of Cricket Balls", "Cage", "Other", 1, 1, None),
+    ("other_su_banner", "Old CUMC SU Banner", "Cage", "Other", 1, 1, None),
+    ("other_frisbee", "Orange Frisbee", "Cage", "Other", 1, 1, None),
+    ("other_hi_vis", "Hi-Vis", "Cage", "Other", 10, 10, None),
+    ("other_warning_triangle", "AA Emergancy Warning Triangle", "Cage", "Other", 5, 5, None),
+    ("other_car_sticker", "UK Car Sticker", "Cage", "Other", 7, 7, None),
+    ("slackline_ultrasport", "Ultrasport Slack Line, red, black bag", "Cage", "Other", 1, 1, None),
+    ("slackline_barefoot", "Barefoot Slackline, yellow", "Cage", "Other", 1, 1, None),
+    ("other_breathalyzers", "Single Use Breathalyzers", "Cage", "Other", 4, 4, None),
+    ("other_flag", "Old CUMC Flag", "Cage", "Other", 1, 1, None),
+    ("other_tent_pegs", "Random tent pegs", "Cage", "Other", 1, 1, "spreadsheet quantity was 'Loads'"),
+    ("other_tent_poles", "Random tent poles", "Cage", "Other", 1, 1, "spreadsheet quantity was 'two bags'"),
+    ("other_zip_ties", "Zip ties", "Cage", "Other", 1, 1, "spreadsheet quantity was 'loads'"),
+    ("other_washing_tub", "Red washing up tub", "Cage", "Other", 2, 2, None),
+    ("other_bags", "Bags", "Cage", "Other", 4, 4, None),
+    ("other_guy_lines", "Spare guy lines", "Cage", "Other", 1, 1, None),
+]
+
+# Groups fold several specific variants of the same real item into one
+# member-facing "product" (see ItemGroup in models.py) - a member requests
+# "8 Sport Quickdraws", not "6 DMM Alphas and 2 Petzl Djinns", and the
+# committee picks the exact ones to hand over when they approve it. Only
+# applied where the variants are genuinely interchangeable for a member's
+# purposes (brand/colour differences); deliberately NOT applied to Cams or
+# Nuts, where the exact size actually matters for what the member can safely
+# use it for. Trad Quickdraws *is* grouped (unlike the other two) since the
+# length difference there is a rack-organisation preference rather than a
+# safety-relevant choice - worth reconsidering if that's not the case.
+# (group name, category name, subcategory name, [KitItem keys to fold in])
+ITEM_GROUPS = [
+    (
+        "Sport Quickdraws",
+        "Hardwear",
+        "Sport Quickdraws",
+        ["qd_sport_dmm_alpha", "qd_sport_petzl_djinn", "qd_sport_clog", "qd_sport_dmm_shadow"],
+    ),
+    (
+        "Bouldering Pads",
+        "Bouldering",
+        "Bouldering Pads",
+        [
+            "pad_petzl",
+            "pad_alpkit",
+            "pad_ocun",
+            "pad_ocun_dominator",
+            "pad_black_diamond",
+            "pad_ocun_incubator",
+            "pad_psychi",
+        ],
+    ),
+    (
+        "Helmets",
+        "Personal Safety",
+        "Helmets",
+        ["helmet_blue", "helmet_light_blue", "helmet_red", "helmet_green"],
+    ),
+    (
+        "Assisted Braking Devices",
+        "Hardwear",
+        "Assisted Breaking",
+        ["abd_petzl_grigri", "abd_mammut_smart"],
+    ),
+    (
+        "First Aid Kits",
+        "Other",
+        "Health and Safety",
+        ["first_aid_green", "first_aid_red", "first_aid_brown_bag"],
+    ),
+    (
+        "Trad Quickdraws",
+        "Hardwear",
+        "Trad Quickdraws",
+        ["qd_trad_18cm_silver", "qd_trad_22cm_red", "qd_trad_18cm_green", "qd_trad_18cm_blue"],
+    ),
+    # Sleeping bag/mat warmth and insulation type can matter for winter trips,
+    # similar to why Cams/Nuts aren't grouped - flagged here so the committee
+    # can split these back out via the admin page if that distinction turns
+    # out to matter more than it saves in simplicity.
+    (
+        "Sleeping Bags",
+        "Cage",
+        "Sleeping Bag",
+        ["sleeping_bag_vango", "sleeping_bag_forclaz", "sleeping_bag_blue", "sleeping_bag_green"],
+    ),
+    (
+        "Sleeping Mats",
+        "Cage",
+        "Sleeping Mat",
+        ["sleeping_mat_self_inflating", "sleeping_mat_peak_oyl", "sleeping_mat_foam"],
+    ),
+    (
+        "Slacklines",
+        "Cage",
+        "Other",
+        ["slackline_ultrasport", "slackline_barefoot"],
+    ),
+    # Every subcategory below has exactly one KitItem row in it - wrapping
+    # each in a (single-item) group just gives it the same "product card"
+    # presentation as everything else on the request page, rather than one
+    # odd bare row sitting among a grid of group/item cards.
+    ("Prussiks", "Soft Items", "Prussiks", ["prussiks_blue"]),
+    ("Daisy Chain", "Soft Items", "Daisy chain", ["daisy_chain_white_blue"]),
+    ("Alpine Quickdraws", "Hardwear", "Alpine Quickdraws", ["qd_alpine_18cm"]),
+    ("Hexes", "Hardwear", "Hexes", ["hexes_dmm_set4"]),
+    ("Maillons", "Hardwear", "Maillons", ["maillons"]),
+    ("Nut Keys", "Hardwear", "Nut Keys", ["nut_keys"]),
+    ("Ohm", "Hardwear", "Ohm", ["ohm_elderid"]),
+    ("ATC", "Hardwear", "ATC", ["atc"]),
+    ("Descenders", "Hardwear", "Descenders", ["descender_figure8"]),
+    ("Locking Carabiners", "Hardwear", "Locking carabiners", ["locking_carabiners"]),
+    ("Harness", "Personal Safety", "Harness", ["harness_dmm"]),
+    ("Table", "Cage", "Table", ["cage_table"]),
+    # Ropes: same principle as Cams - length is the safety-relevant spec a
+    # member actually needs to choose correctly, brand/colour at the same
+    # length isn't. Grouped by length within each rope type instead, so
+    # "Single Rope - 70m" still means a member gets a 70m rope, just not
+    # told/asked which specific one.
+    ("Single Rope - 42m", "Soft Items", "Single rope", ["rope_single_beal10_mixed_yellow"]),
+    ("Single Rope - 47m", "Soft Items", "Single rope", ["rope_single_beal_47m"]),
+    ("Single Rope - 50m", "Soft Items", "Single rope", ["rope_single_mammut_50m_chopped"]),
+    ("Single Rope - 60m", "Soft Items", "Single rope", ["rope_single_mammut_60m_orange"]),
+    ("Single Rope - 70m", "Soft Items", "Single rope", ["rope_single_70m_brown_a", "rope_single_70m_brown_b"]),
+    ("Single Rope - 80m", "Soft Items", "Single rope", ["rope_single_edelweiss_80m"]),
+    ("Static Rope - 15m", "Soft Items", "Static rope", ["rope_static_15m"]),
+    ("Static Rope - 30m", "Soft Items", "Static rope", ["rope_static_30m_a", "rope_static_30m_b"]),
+    ("Static Rope - 60m", "Soft Items", "Static rope", ["rope_static_60m"]),
+    ("Half Rope - 50m", "Soft Items", "Half", ["rope_half_beal_pair_50m", "rope_half_beal_single_50m"]),
+]
+
+# Trad rack "parts": unlike ITEM_GROUPS above (interchangeable variants of the
+# *same* product, where any one satisfies the request), a real trad rack is
+# built from several *different* items requested together - e.g. "a set of
+# cams 0.4-3" means six distinct sizes handed over as one bundle, not any one
+# of them. That's exactly what KitBundle already models (see admin_bundles /
+# add_bundle_to_basket), so these are seeded as bundles, not groups. Cams
+# themselves are still never folded into an ItemGroup - each size is still
+# its own KitItem row with its own real stock count, since a 0.4 and a 3
+# aren't interchangeable; a bundle just adds several specific sizes to the
+# request list in one click.
+# A line can reference a KitItem key as normal, or an ItemGroup by name using
+# "group:<Group Name>" - e.g. "group:Trad Quickdraws" below adds a line for
+# the whole Trad Quickdraws group rather than one specific length, matching
+# how bundle lines can point at either an item or a group in the admin UI.
+# (bundle name, description, [(KitItem key OR "group:<Group Name>", quantity), ...])
+BUNDLES = [
+    (
+        "Trad Rack",
+        "The core trad rack range most routes need: Cams, Nuts, Hexes, Quickdraws, Nut Keys",
+        [
+            ("cam_04", 1),
+            ("cam_05", 1),
+            ("cam_075", 1),
+            ("cam_1", 1),
+            ("cam_2", 1),
+            ("cam_3", 1),
+            ("nuts_complete_set", 1),
+            ("hexes_dmm_set4", 1),
+            ("group:Trad Quickdraws", 8),
+            ("nut_keys", 2),
+        ],
+    ),
 ]
 
 # Real current loans from the spreadsheet's "Who has it" / "Amount taken out"
@@ -205,69 +365,8 @@ KIT_ITEMS = [
 # names from the spreadsheet ("?", "??", "Unkown") have been normalised to
 # "Unknown"; genuinely unclear group loans ("Unaccounted for") are kept as-is
 # since that's real information about the club's kit tracking gaps.
-# (item name, borrower name, quantity, signed_out_at date "YYYY-MM-DD" or None for "now")
-SIGN_OUTS = [
-    # ("30m, white and black", "Unknown", 1, None),
-    # ("30m, white and black (Static rope)", "Unknown", 1, None),
-    # ("15m, white and black", "Unknown", 1, None),
-    # ("Pair of Beal Cobra II Unicore 8.6, 50m, Red+Green", "Unknown", 2, None),
-    # ("Blue Prussiks, all on screwgates", "Unknown", 2, None),
-    # ("White and Blue, all on screwgates", "Unknown", 1, None),
-    # ("60cm, 2 grey, 1 orange, all on screwgates", "Will G", 1, None),
-    # ("120cm, grey, red, purple, all on screwgates", "Unknown", 1, None),
-    # ("240cm, green, blue, purple, all on screwgates", "Unknown", 1, None),
-    # ("400cm, blue, all on screwgates", "Unknown", 2, None),
-    # ("Black Diamond, Orange Blue", "Lucas", 1, None),
-    # ("Black Diamond, Orange Blue", "Issac", 1, None),
-    # ("Incubator", "Unknown", 1, None),
-    # ("18cm, silver slings", "Unknown", 2, None),
-    # ("cm, green slings", "Unknown", 6, None),
-    # ("18cm, Orange/yellow sling", "Unknown, Rob(2 draws)", 3, None),
-    # ("DMM Alphas, yellow", "Unknown", 1, None),
-    # ("Petzl Djinn, two lengths, orange", "Chris/jos", 7, None),
-    # ("Petzl Djinn, two lengths, orange", "Unknown", 4, None),
-    # ("Clog, blue", "Unknown", 1, None),
-    # ("DMM Shadow, purple", "Unknown", 5, None),
-    # ("Complete 1-11 set of nuts on 2 snapgates", "Unaccounted for", 7, None),
-    # ("Set of offsets, 7-11", "Unknown", 2, None),
-    # ("DMM set of 4, yellow, red, blue, green", "Unaccounted for", 4, None),
-    # ("5,  Big purp, (1 Black Diamond)", "James??", 1, None),
-    # ("4, Silver, (1 Black Diamond)", "Unknown", 1, None),
-    # ("3, Blue, (3 Black Diamond, 2 DMM)", "Rob", 1, None),
-    # ("3, Blue, (3 Black Diamond, 2 DMM)", "Unknown", 1, None),
-    # ("2, Gold, (3 Black Diamond, 2 DMM)", "Rob", 1, None),
-    # ("2, Gold, (3 Black Diamond, 2 DMM)", "Unknown", 1, None),
-    # ("1, Red, (4 Black Diamond)", "Rob", 1, None),
-    # ("1, Red, (4 Black Diamond)", "Unknown", 1, None),
-    # (".75, Green, (4 Black Diamond, 1 DMM)", "Unknown", 2, None),
-    # (".75, Green, (4 Black Diamond, 1 DMM)", "Rob", 1, None),
-    # (".75, Green, (4 Black Diamond, 1 DMM)", "Unknown", 1, None),
-    # (".5, Small purp, (2 Black Diamond, 2 Wild Country)", "Rob", 1, None),
-    # (".4,  Silver, (2 Black Diamond, 3 DMM)", "Rob", 1, None),
-    # (".4,  Silver, (2 Black Diamond, 3 DMM)", "Unknown", 1, None),
-    # (".3, Blue, (Black Diamond)", "Rob", 1, None),
-    # (".1, Red, (Black Diamond)", "Unknown", 1, None),
-    # ("All attatched to a screwgate", "Unknown", 3, None),
-    # ("Various types of nut key, on snapgate", "Unknown", 1, None),
-    # ("Various models, all on screwgates", "Unaccounted for", 5, None),
-    # ("Figure 8 descender", "Unknown", 2, None),
-    # ("Loose carabiners", "Will G", 1, None),
-    # ("Loose carabiners", "Antoni", 6, None),
-    # ("Loose carabiners", "Ben", 1, None),
-    # ("DMM Brennin and DMM Centre", "Will G", 1, None),
-    # ("DMM Brennin and DMM Centre", "Molly", 1, None),
-    # ("DMM Brennin and DMM Centre", "Caitlin", 1, None),
-    # ("DMM Brennin and DMM Centre", "Unaccounted for", 15, None),
-    # ("Blue helmets", "Caitlin", 1, None),
-    # ("Blue helmets", "Will G", 1, None),
-    # ("Blue helmets", "Arran", 1, "2026-05-26"),
-    # ("Blue helmets", "Unaccounted for", 3, None),
-    # ("Light Blue Helmerts", "Unaccounted for", 2, None),
-    # ("Red helmets", "Unaccounted for", 2, None),
-    # ("Green Helmets", "Unaccounted for", 3, None),
-    # ("Guidebooks for Uk, france, spain, etc", "Juno: Wye Valley? Rose: north wales bouldering Freya: Gower Rock & Pembrookshire", 5, None),
-    # ("Climbing shoes", "Caitlin", 4, None),
-]
+# (KitItem key, borrower name, quantity, signed_out_at date "YYYY-MM-DD" or None for "now")
+SIGN_OUTS = []
 
 
 def run():
@@ -278,7 +377,9 @@ def run():
         for category_name, subcategory_names in CATALOG.items():
             category = Category.query.filter_by(name=category_name).first()
             if not category:
-                category = Category(name=category_name)
+                category = Category(
+                    name=category_name, member_visible=category_name not in HIDDEN_CATEGORIES
+                )
                 db.session.add(category)
                 db.session.flush()  # get category.id before creating subcategories
                 categories_added += 1
@@ -290,38 +391,43 @@ def run():
                     subcategories_added += 1
         db.session.commit()
 
+        # Maps each KIT_ITEMS key to the real KitItem row it belongs to -
+        # whether that row was just created below or already existed from a
+        # previous run - so ITEM_GROUPS/BUNDLES can look items up by key
+        # instead of by matching name text.
+        items_by_key = {}
         items_added = 0
-        for name, category_name, subcategory_name, quantity_total, quantity_available, description in KIT_ITEMS:
-            if KitItem.query.filter_by(name=name).first():
-                continue
-            subcategory = Subcategory.query.join(Category).filter(
-                Subcategory.name == subcategory_name, Category.name == category_name
-            ).first()
-            if not subcategory:
-                print(f"  skipping '{name}' - no subcategory '{subcategory_name}' under '{category_name}'")
-                continue
-            db.session.add(
-                KitItem(
+        for key, name, category_name, subcategory_name, quantity_total, quantity_available, description in KIT_ITEMS:
+            item = KitItem.query.filter_by(name=name).first()
+            if not item:
+                subcategory = (
+                    Subcategory.query.join(Category).filter(Subcategory.name == subcategory_name, Category.name == category_name).first()
+                )
+                if not subcategory:
+                    print(f"  skipping '{name}' ({key}) - no subcategory '{subcategory_name}' under '{category_name}'")
+                    continue
+                item = KitItem(
                     name=name,
                     subcategory_id=subcategory.id,
                     quantity_total=quantity_total,
                     quantity_available=quantity_available,
                     description=description,
                 )
-            )
-            items_added += 1
+                db.session.add(item)
+                db.session.flush()  # get item.id before it's referenced by key below
+                items_added += 1
+            items_by_key[key] = item
         db.session.commit()
 
         sign_outs_added = 0
-        for item_name, borrower_name, quantity, date_str in SIGN_OUTS:
-            item = KitItem.query.filter_by(name=item_name).first()
+        for key, borrower_name, quantity, date_str in SIGN_OUTS:
+            item = items_by_key.get(key)
             if not item:
+                print(f"  skipping sign-out for '{key}' - no such kit item")
                 continue
             # Skip if this exact loan already looks seeded (keeps the script
             # safe to re-run without piling up duplicate sign-outs).
-            already = SignOut.query.filter_by(
-                item_id=item.id, borrower_name=borrower_name, quantity=quantity
-            ).first()
+            already = SignOut.query.filter_by(item_id=item.id, borrower_name=borrower_name, quantity=quantity).first()
             if already:
                 continue
             signed_out_at = datetime.strptime(date_str, "%Y-%m-%d") if date_str else datetime.utcnow()
@@ -337,9 +443,73 @@ def run():
             sign_outs_added += 1
         db.session.commit()
 
+        groups_added = 0
+        items_grouped = 0
+        for group_name, category_name, subcategory_name, item_keys in ITEM_GROUPS:
+            subcategory = (
+                Subcategory.query.join(Category).filter(Subcategory.name == subcategory_name, Category.name == category_name).first()
+            )
+            if not subcategory:
+                print(f"  skipping group '{group_name}' - no subcategory '{subcategory_name}' under '{category_name}'")
+                continue
+
+            group = ItemGroup.query.filter_by(name=group_name).first()
+            if not group:
+                group = ItemGroup(name=group_name, subcategory_id=subcategory.id)
+                db.session.add(group)
+                db.session.flush()  # get group.id before assigning items to it
+                groups_added += 1
+
+            for key in item_keys:
+                item = items_by_key.get(key)
+                if not item:
+                    print(f"  skipping '{key}' in group '{group_name}' - no such kit item")
+                    continue
+                if item.group_id is None:
+                    item.group_id = group.id
+                    items_grouped += 1
+        db.session.commit()
+
+        bundles_added = 0
+        bundle_lines_added = 0
+        for bundle_name, description, lines in BUNDLES:
+            bundle = KitBundle.query.filter_by(name=bundle_name).first()
+            if not bundle:
+                bundle = KitBundle(name=bundle_name, description=description)
+                db.session.add(bundle)
+                db.session.flush()  # get bundle.id before adding lines to it
+                bundles_added += 1
+
+            for key, quantity in lines:
+                if key.startswith("group:"):
+                    group_name = key[len("group:") :]
+                    group = ItemGroup.query.filter_by(name=group_name).first()
+                    if not group:
+                        print(f"  skipping group '{group_name}' in bundle '{bundle_name}' - no such item group")
+                        continue
+                    already = KitBundleLine.query.filter_by(bundle_id=bundle.id, group_id=group.id).first()
+                    if already:
+                        continue
+                    db.session.add(KitBundleLine(bundle_id=bundle.id, group_id=group.id, quantity=quantity))
+                    bundle_lines_added += 1
+                    continue
+
+                item = items_by_key.get(key)
+                if not item:
+                    print(f"  skipping '{key}' in bundle '{bundle_name}' - no such kit item")
+                    continue
+                already = KitBundleLine.query.filter_by(bundle_id=bundle.id, item_id=item.id).first()
+                if already:
+                    continue
+                db.session.add(KitBundleLine(bundle_id=bundle.id, item_id=item.id, quantity=quantity))
+                bundle_lines_added += 1
+        db.session.commit()
+
         print(
             f"Seeded {categories_added} categories, {subcategories_added} subcategories, "
-            f"{items_added} kit items and {sign_outs_added} sign-out records "
+            f"{items_added} kit items, {sign_outs_added} sign-out records, "
+            f"{groups_added} item groups ({items_grouped} items folded into a group) and "
+            f"{bundles_added} kit bundles ({bundle_lines_added} lines added) "
             f"(skipping anything that already exists)."
         )
 

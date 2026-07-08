@@ -5,7 +5,7 @@
   {% include "_admin_nav.html" %}
 
   <section class="card">
-    <p class="empty-state">Group several distinct items together so members can request them all in one go &mdash; e.g. a &ldquo;Trad Rack&rdquo; of nuts, cams and hexes, or a kit list saved for a specific trip.</p>
+    <p class="empty-state">Group several distinct items (or item groups) together so members can request them all in one go &mdash; e.g. a &ldquo;Trad Rack&rdquo; of nuts, cams and hexes, or a kit list saved for a specific trip. A line can point at one specific item, or at a whole group (like Helmets) so the committee picks the exact one when they approve the request.</p>
 
     {% if bundles %}
       {% for bundle in bundles %}
@@ -15,9 +15,25 @@
               <strong>{{ bundle.name }}</strong>
               {% if bundle.description %}<br><small>{{ bundle.description }}</small>{% endif %}
             </div>
-            <form method="post" action="{{ url_for('delete_bundle', bundle_id=bundle.id) }}" onsubmit="return confirm('Delete bundle {{ bundle.name }}? This won\'t delete the items themselves.');">
-              <button type="submit" class="btn btn-small btn-danger">Delete Bundle</button>
-            </form>
+            <span class="actions">
+              <details class="edit-bundle-details">
+                <summary class="btn btn-small btn-secondary">Edit</summary>
+                <form method="post" action="{{ url_for('edit_bundle', bundle_id=bundle.id) }}" class="inline-form" style="margin-top:0.5rem;">
+                  <div>
+                    <label for="bundle-{{ bundle.id }}-name">Name</label>
+                    <input type="text" id="bundle-{{ bundle.id }}-name" name="name" value="{{ bundle.name }}">
+                  </div>
+                  <div>
+                    <label for="bundle-{{ bundle.id }}-description">Description <small>(optional)</small></label>
+                    <input type="text" id="bundle-{{ bundle.id }}-description" name="description" value="{{ bundle.description or '' }}">
+                  </div>
+                  <button type="submit" class="btn btn-small btn-primary">Save Changes</button>
+                </form>
+              </details>
+              <form method="post" action="{{ url_for('delete_bundle', bundle_id=bundle.id) }}" onsubmit="return confirm('Delete bundle {{ bundle.name }}? This won\'t delete the items themselves.');">
+                <button type="submit" class="btn btn-small btn-danger">Delete Bundle</button>
+              </form>
+            </span>
           </div>
 
           {% if bundle.lines %}
@@ -26,7 +42,11 @@
               <tbody>
                 {% for line in bundle.lines %}
                 <tr>
-                  <td>{{ line.item.name }}{% if not line.item.active %} <span class="badge badge-archived">Archived</span>{% endif %}</td>
+                  <td>
+                    {{ line.name }}
+                    {% if line.group_id %}<span class="badge badge-group">Multiple options</span>{% endif %}
+                    {% if not line.active %} <span class="badge badge-archived">Archived</span>{% endif %}
+                  </td>
                   <td>{{ line.quantity }}</td>
                   <td class="actions">
                     <form method="post" action="{{ url_for('delete_bundle_line', bundle_id=bundle.id, line_id=line.id) }}">
@@ -57,11 +77,14 @@
               </select>
             </div>
             <div>
-              <label for="bundle-{{ bundle.id }}-item_id">Item</label>
-              <select id="bundle-{{ bundle.id }}-item_id" name="item_id" required>
+              <label for="bundle-{{ bundle.id }}-entry_id">Item or group</label>
+              <select id="bundle-{{ bundle.id }}-entry_id" name="entry_id" required>
                 <option value="" disabled selected data-subcategory-id="">Select&hellip;</option>
+                {% for group in groups %}
+                  <option value="group:{{ group.id }}" data-subcategory-id="{{ group.subcategory_id }}">{{ group.name }} (group &mdash; any matching item)</option>
+                {% endfor %}
                 {% for item in items %}
-                  <option value="{{ item.id }}" data-subcategory-id="{{ item.subcategory_id }}">{{ item.name }}</option>
+                  <option value="item:{{ item.id }}" data-subcategory-id="{{ item.subcategory_id }}">{{ item.name }}</option>
                 {% endfor %}
               </select>
             </div>
@@ -102,7 +125,7 @@
       initCascade(
         "bundle-{{ bundle.id }}-filter-category",
         "bundle-{{ bundle.id }}-filter-subcategory",
-        "bundle-{{ bundle.id }}-item_id"
+        "bundle-{{ bundle.id }}-entry_id"
       );
     {% endfor %}
   });

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Your Basket{% endblock %}
+{% block title %}Your Request List{% endblock %}
 {% block content %}
-  <h1>Your Basket</h1>
+  <h1>Your Request List</h1>
 
   {% if line_items %}
     <section class="card">
@@ -48,6 +48,6 @@
       </form>
     </section>
   {% else %}
-    <p class="empty-state">Your basket is empty. <a href="{{ url_for('request_kit') }}">Browse kit</a> to add items.</p>
+    <p class="empty-state">Your request list is empty. <a href="{{ url_for('request_kit') }}">Browse kit</a> to add items.</p>
   {% endif %}
 {% endblock %}

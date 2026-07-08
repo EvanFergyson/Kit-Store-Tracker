@@ -2,7 +2,7 @@
 {% block title %}Request Kit{% endblock %}
 {% block content %}
   <h1>Request Kit</h1>
-  <p>Browse the kit store by category and add anything you need to your basket, then head to your basket to send the request to the committee.</p>
+  <p>Browse the kit store by category and add anything you need to your request list, then send it to the committee.</p>
 
   {% if bundles %}
     <section class="card">
@@ -17,11 +17,11 @@
               <br>
               <small>
                 Includes:
-                {% for line in bundle.lines if line.item.active %}{{ line.quantity }}x {{ line.item.name }}{% if not loop.last %}, {% endif %}{% endfor %}
+                {% for line in bundle.lines if line.active %}{{ line.quantity }}x {{ line.name }}{% if not loop.last %}, {% endif %}{% endfor %}
               </small>
             </div>
             <form method="post" action="{{ url_for('add_bundle_to_basket', bundle_id=bundle.id) }}" class="js-basket-add">
-              <button type="submit" class="btn btn-small btn-primary">Add Bundle to Basket</button>
+              <button type="submit" class="btn btn-small btn-primary">Add Bundle to List</button>
             </form>
           </div>
         </div>
@@ -58,7 +58,7 @@
         <button type="button" class="qty-step qty-step-up" aria-label="Increase quantity">+</button>
       </div>
 
-      <button type="submit" class="btn btn-small">Add to Basket</button>
+      <button type="submit" class="btn btn-small btn-primary">Add to List</button>
     </form>
   </section>
 {% endblock %}

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Search{% if query %}: {{ query }}{% endif %}{% endblock %}
+{% block content %}
+  <h1>Search kit</h1>
+
+  <form method="get" action="{{ url_for('search_kit') }}" class="inline-form" style="margin-bottom:1.5rem;">
+    <div>
+      <label for="search-q">Search by name, description or subcategory</label>
+      <input type="search" id="search-q" name="q" value="{{ query }}" placeholder="e.g. helmet, rope, first aid" autofocus>
+    </div>
+    <button type="submit" class="btn btn-primary">Search</button>
+  </form>
+
+  {% if not query %}
+    <p class="empty-state">Type something above to search the kit store.</p>
+  {% elif not kit_entries %}
+    <p class="empty-state">No kit matches &ldquo;{{ query }}&rdquo;. Try a different word, or <a href="{{ url_for('request_kit') }}#cant-find-it">let us know</a> what you're after.</p>
+  {% else %}
+    <section class="card">
+      {% if has_groups %}
+        <p class="empty-state">Items marked <span class="badge badge-group">Multiple options</span> cover several sizes or variants &mdash; the committee will pick the exact one when they approve your request.</p>
+      {% endif %}
+      <table>
+        <thead>
+          <tr><th>Item</th><th>Category</th><th>Available</th><th>Qty</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for entry in kit_entries %}
+          <tr>
+            <td>
+              {{ entry.name }}
+              {% if entry.kind == "group" %}<span class="badge badge-group">Multiple options</span>{% endif %}
+            </td>
+            <td>{{ entry.category.name }} &rsaquo; {{ entry.subcategory.name }}</td>
+            <td>{{ entry.quantity_available }} of {{ entry.quantity_total }}</td>
+            <td>
+              <form method="post" action="{{ url_for('add_to_basket') }}" class="basket-add-form js-basket-add">
+                {% if entry.kind == "group" %}
+                  <input type="hidden" name="group_id" value="{{ entry.id }}">
+                {% else %}
+                  <input type="hidden" name="item_id" value="{{ entry.id }}">
+                {% endif %}
+                <div class="qty-stepper">
+                  <button type="button" class="qty-step qty-step-down" aria-label="Decrease quantity">&minus;</button>
+                  <input type="number" name="quantity" min="1" value="1" inputmode="numeric" aria-label="Quantity of {{ entry.name }}">
+                  <button type="button" class="qty-step qty-step-up" aria-label="Increase quantity">+</button>
+                </div>
+                <button type="submit" class="btn btn-small btn-primary">Add to List</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  {% endif %}
+{% endblock %}

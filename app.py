@@ -4,8 +4,9 @@ import uuid
 from datetime import date, datetime
 from functools import wraps
 
-from flask import Flask, flash, redirect, render_template, request, session, url_for
-from sqlalchemy import func
+from flask import Flask, abort, flash, redirect, render_template, request, session, url_for
+from sqlalchemy import func, inspect, or_, text
+from sqlalchemy.schema import CreateColumn
 
 from config import Config
 from models import Category, ItemGroup, ItemRequest, KitBundle, KitBundleLine, KitItem, SignOut, Subcategory, db
@@ -25,9 +26,45 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        _ensure_schema()
 
     register_routes(app)
     return app
+
+
+def _ensure_schema():
+    """Add any model columns that don't exist yet on a database that was
+    created before they were added to the model. db.create_all() only
+    creates missing TABLES - it never alters a table that already exists -
+    so a genuinely new column on an existing table (like Category.
+    member_visible) needs its own small step here instead of silently doing
+    nothing on every deploy. This intentionally only handles "add a column
+    with a server-side default"; anything more involved (renaming/dropping a
+    column, changing a type) should be done by hand against the database
+    directly rather than extending this function.
+    """
+    inspector = inspect(db.engine)
+    existing_columns = {col["name"] for col in inspector.get_columns("categories")}
+    if "member_visible" not in existing_columns:
+        column_ddl = CreateColumn(Category.__table__.columns["member_visible"]).compile(dialect=db.engine.dialect)
+        with db.engine.begin() as conn:
+            conn.execute(text(f"ALTER TABLE categories ADD COLUMN {column_ddl}"))
+
+    bundle_line_columns = {col["name"] for col in inspector.get_columns("kit_bundle_lines")}
+    if "group_id" not in bundle_line_columns:
+        column_ddl = CreateColumn(KitBundleLine.__table__.columns["group_id"]).compile(dialect=db.engine.dialect)
+        with db.engine.begin() as conn:
+            conn.execute(text(f"ALTER TABLE kit_bundle_lines ADD COLUMN {column_ddl}"))
+        # item_id also changed from NOT NULL to nullable (a bundle line can
+        # now point at a group instead of a specific item) - that's a column
+        # *alteration*, not an added column, so it's outside what this
+        # function does (see its docstring). A brand new database created
+        # from this version of models.py gets it nullable from the start via
+        # db.create_all(); a database that already existed before this
+        # change would need one manual, one-off command run against it:
+        #   ALTER TABLE kit_bundle_lines ALTER COLUMN item_id DROP NOT NULL;
+        # (SQLite doesn't support ALTER COLUMN at all - drop and recreate the
+        # local instance/kitstore.db file instead, since it's dev-only data.)
 
 
 def login_required(view_func):
@@ -84,6 +121,42 @@ def parse_positive_int(raw):
     except ValueError:
         return None
     return value if value > 0 else None
+
+
+def build_kit_entries(items, groups):
+    """Merge ungrouped KitItems and ItemGroups into one alphabetically-sorted
+    list for display, so members browsing or searching see a single combined
+    list instead of two separate "Kit" / "Individual Items" tables - having
+    to check two tables to see everything on offer was the actual source of
+    confusion, not the grouping/abstraction itself. Each entry is a plain
+    dict rather than the raw model instance since KitItem and ItemGroup
+    don't share a base class, but do share every field the templates need
+    (name, subcategory, quantity_available/total, id)."""
+    entries = [
+        {
+            "kind": "group",
+            "id": group.id,
+            "name": group.name,
+            "category": group.category,
+            "subcategory": group.subcategory,
+            "quantity_available": group.quantity_available,
+            "quantity_total": group.quantity_total,
+        }
+        for group in groups
+    ] + [
+        {
+            "kind": "item",
+            "id": item.id,
+            "name": item.name,
+            "category": item.category,
+            "subcategory": item.subcategory,
+            "quantity_available": item.quantity_available,
+            "quantity_total": item.quantity_total,
+        }
+        for item in items
+    ]
+    entries.sort(key=lambda entry: entry["name"].lower())
+    return entries
 
 
 # ------------------------------------------------------------------ basket
@@ -170,20 +243,23 @@ def register_routes(app):
 
     @app.route("/request")
     def request_kit():
-        # Only show bundles that still have at least one non-archived item in
-        # them - an empty or fully-archived bundle would just be a dead end
-        # for a member browsing the page.
+        # Only show bundles that still have at least one usable line in them
+        # (an active item, or a group with an active item left in it) - an
+        # empty or fully-archived bundle would just be a dead end for a
+        # member browsing the page.
         bundles = [
             bundle
             for bundle in KitBundle.query.order_by(KitBundle.name).all()
-            if any(line.item.active for line in bundle.lines)
+            if any(line.active for line in bundle.lines)
         ]
         # One card per category rather than one long combined list of every
         # item in the store - each card links through to that category's own
         # (much shorter) page. Counts are shown on the card so a member can
         # tell at a glance roughly how much is in there before clicking in.
+        # Only categories the committee has left visible to members show up
+        # here - see Category.member_visible.
         category_cards = []
-        for category in Category.query.order_by(Category.name).all():
+        for category in Category.query.filter_by(member_visible=True).order_by(Category.name).all():
             item_count = sum(
                 1 for sub in category.subcategories for item in sub.items
                 if item.active and item.group_id is None
@@ -199,7 +275,11 @@ def register_routes(app):
     @app.route("/request/category/<int:category_id>")
     def request_category(category_id):
         category = Category.query.get_or_404(category_id)
-        subcategories = Subcategory.query.filter_by(category_id=category.id).order_by(Subcategory.name).all()
+        # Also block direct URL access to a hidden category, not just its
+        # card on the browse page - otherwise "hidden" would only mean
+        # "not linked to", which isn't what the committee is asking for.
+        if not category.member_visible:
+            abort(404)
         # Items that belong to a group (e.g. individual nut sizes) are folded
         # into that group's single row instead of listed on their own here -
         # a member requests "Nuts", not a specific size.
@@ -218,12 +298,71 @@ def register_routes(app):
             .all()
             if group.active_items
         ]
+        kit_entries = build_kit_entries(items, groups)
+        # Only offer a filter chip for subcategories that actually have
+        # something to show (grouped or not) - a subcategory with nothing
+        # visible in it would otherwise be a dead-end chip that filters the
+        # table down to nothing.
+        subcategory_ids_with_entries = {entry["subcategory"].id for entry in kit_entries}
+        subcategories = [
+            sub
+            for sub in Subcategory.query.filter_by(category_id=category.id).order_by(Subcategory.name).all()
+            if sub.id in subcategory_ids_with_entries
+        ]
         return render_template(
             "request_category.html",
             category=category,
             subcategories=subcategories,
-            items=items,
-            groups=groups,
+            kit_entries=kit_entries,
+            has_groups=bool(groups),
+        )
+
+    @app.route("/request/search")
+    def search_kit():
+        query = request.args.get("q", "").strip()
+        items = []
+        groups = []
+        if query:
+            like = f"%{query}%"
+            # Matches on item name, item description or subcategory name -
+            # e.g. searching "cam" also surfaces items filed under a "Cams"
+            # subcategory even if the word "cam" isn't in the item's own
+            # name. Restricted to member_visible categories and active,
+            # ungrouped items/groups with stock, same as browsing by category.
+            items = (
+                KitItem.query.filter(KitItem.active.is_(True), KitItem.group_id.is_(None))
+                .join(Subcategory)
+                .join(Category)
+                .filter(Category.member_visible.is_(True))
+                .filter(
+                    or_(
+                        KitItem.name.ilike(like),
+                        KitItem.description.ilike(like),
+                        Subcategory.name.ilike(like),
+                    )
+                )
+                .order_by(KitItem.name)
+                .all()
+            )
+            groups = [
+                group
+                for group in ItemGroup.query.join(Subcategory)
+                .join(Category)
+                .filter(Category.member_visible.is_(True))
+                .filter(
+                    or_(
+                        ItemGroup.name.ilike(like),
+                        ItemGroup.description.ilike(like),
+                        Subcategory.name.ilike(like),
+                    )
+                )
+                .order_by(ItemGroup.name)
+                .all()
+                if group.active_items
+            ]
+        kit_entries = build_kit_entries(items, groups)
+        return render_template(
+            "search_results.html", query=query, kit_entries=kit_entries, has_groups=bool(groups)
         )
 
     @app.route("/basket/add", methods=["POST"])
@@ -243,17 +382,17 @@ def register_routes(app):
             item = KitItem.query.get_or_404(item_id)
             key = str(item.id)
             basket["items"][key] = basket["items"].get(key, 0) + quantity
-            message = f"Added {quantity} x {item.name} to your basket."
+            message = f"Added {quantity} x {item.name} to your request list."
         elif group_id:
             ok = True
             group = ItemGroup.query.get_or_404(group_id)
             key = str(group.id)
             basket["groups"][key] = basket["groups"].get(key, 0) + quantity
-            message = f"Added {quantity} x {group.name} to your basket."
+            message = f"Added {quantity} x {group.name} to your request list."
         elif custom_name:
             ok = True
             basket["other"].append({"name": custom_name, "quantity": quantity})
-            message = f"Added {quantity} x {custom_name} to your basket."
+            message = f"Added {quantity} x {custom_name} to your request list."
         else:
             ok = False
             message = "Choose an item or describe what you need."
@@ -275,18 +414,22 @@ def register_routes(app):
 
         added = []
         for line in bundle.lines:
-            if not line.item.active:
-                continue  # skip anything archived since it was added to this bundle
-            key = str(line.item_id)
-            basket["items"][key] = basket["items"].get(key, 0) + line.quantity
-            added.append(f"{line.quantity} x {line.item.name}")
+            if not line.active:
+                continue  # skip anything archived/emptied-out since it was added to this bundle
+            if line.group_id:
+                key = str(line.group_id)
+                basket["groups"][key] = basket["groups"].get(key, 0) + line.quantity
+            else:
+                key = str(line.item_id)
+                basket["items"][key] = basket["items"].get(key, 0) + line.quantity
+            added.append(f"{line.quantity} x {line.name}")
 
         session["basket"] = basket
         session.modified = True
 
         if added:
             ok = True
-            message = f"Added '{bundle.name}' to your basket ({', '.join(added)})."
+            message = f"Added '{bundle.name}' to your request list ({', '.join(added)})."
         else:
             ok = False
             message = f"'{bundle.name}' has no available items to add right now."
@@ -309,7 +452,7 @@ def register_routes(app):
             if not requester_name:
                 flash("Please enter your name.", "error")
             elif not line_items:
-                flash("Your basket is empty.", "error")
+                flash("Your request list is empty.", "error")
             else:
                 checkout_group_id = uuid.uuid4().hex
                 for line in line_items:
@@ -382,8 +525,8 @@ def register_routes(app):
         session.modified = True
 
         if is_ajax:
-            return {"ok": True, "message": "Removed from basket.", "basket_count": basket_line_count(basket)}
-        flash("Removed from basket.", "success")
+            return {"ok": True, "message": "Removed from your request list.", "basket_count": basket_line_count(basket)}
+        flash("Removed from your request list.", "success")
         return redirect(url_for("view_basket"))
 
     # ------------------------------------------------------------------ auth
@@ -551,6 +694,16 @@ def register_routes(app):
             db.session.add(Category(name=name))
             db.session.commit()
             flash(f"Added category '{name}'.", "success")
+        return redirect(url_for("admin_categories"))
+
+    @app.route("/admin/categories/<int:category_id>/toggle-visibility", methods=["POST"])
+    @login_required
+    def toggle_category_visibility(category_id):
+        category = Category.query.get_or_404(category_id)
+        category.member_visible = not category.member_visible
+        db.session.commit()
+        state = "visible to members" if category.member_visible else "hidden from members"
+        flash(f"'{category.name}' is now {state}.", "success")
         return redirect(url_for("admin_categories"))
 
     @app.route("/admin/categories/<int:category_id>/delete", methods=["POST"])
@@ -837,6 +990,14 @@ def register_routes(app):
                 "— reassign or remove them first.",
                 "error",
             )
+        elif KitBundleLine.query.filter_by(group_id=group.id).first():
+            # Same idea as the equivalent check on deleting a KitItem: a hard
+            # delete here would leave a bundle line pointing at nothing.
+            flash(
+                f"Cannot delete '{group.name}' while it's part of a kit bundle "
+                "— remove it from the bundle first.",
+                "error",
+            )
         else:
             db.session.delete(group)
             db.session.commit()
@@ -850,12 +1011,14 @@ def register_routes(app):
         categories = Category.query.order_by(Category.name).all()
         subcategories = Subcategory.query.order_by(Subcategory.name).all()
         items = KitItem.query.filter_by(active=True).order_by(KitItem.name).all()
+        groups = [group for group in ItemGroup.query.order_by(ItemGroup.name).all() if group.active_items]
         bundles = KitBundle.query.order_by(KitBundle.name).all()
         return render_template(
             "admin_bundles.html",
             categories=categories,
             subcategories=subcategories,
             items=items,
+            groups=groups,
             bundles=bundles,
             active_tab="bundles",
         )
@@ -876,6 +1039,26 @@ def register_routes(app):
             flash(f"Created bundle '{name}' — add items to it below.", "success")
         return redirect(url_for("admin_bundles"))
 
+    @app.route("/admin/bundles/<int:bundle_id>/edit", methods=["POST"])
+    @login_required
+    def edit_bundle(bundle_id):
+        bundle = KitBundle.query.get_or_404(bundle_id)
+        name = request.form.get("name", "").strip()
+        description = request.form.get("description", "").strip()
+
+        if not name:
+            flash("Bundle name is required.", "error")
+        elif KitBundle.query.filter(
+            func.lower(KitBundle.name) == name.lower(), KitBundle.id != bundle.id
+        ).first():
+            flash(f"A bundle named '{name}' already exists.", "error")
+        else:
+            bundle.name = name
+            bundle.description = description
+            db.session.commit()
+            flash(f"Updated bundle '{name}'.", "success")
+        return redirect(url_for("admin_bundles"))
+
     @app.route("/admin/bundles/<int:bundle_id>/delete", methods=["POST"])
     @login_required
     def delete_bundle(bundle_id):
@@ -890,24 +1073,43 @@ def register_routes(app):
     @login_required
     def add_bundle_line(bundle_id):
         bundle = KitBundle.query.get_or_404(bundle_id)
-        item_id = request.form.get("item_id")
         quantity = parse_positive_int(request.form.get("quantity"))
-        item = KitItem.query.get(item_id) if item_id else None
+        # The picker is a single <select> covering both items and groups -
+        # see admin_bundles.html - so its value is "item:<id>" or
+        # "group:<id>" and we work out which table to look in from that
+        # prefix, rather than needing two separate pickers.
+        kind, _, raw_id = request.form.get("entry_id", "").partition(":")
+        item = KitItem.query.get(int(raw_id)) if kind == "item" and raw_id.isdigit() else None
+        group = ItemGroup.query.get(int(raw_id)) if kind == "group" and raw_id.isdigit() else None
 
-        if not item:
-            flash("Choose an item to add to the bundle.", "error")
+        if not item and not group:
+            flash("Choose an item or group to add to the bundle.", "error")
         elif quantity is None:
             flash("Quantity must be a whole number of at least 1.", "error")
-        elif any(line.item_id == item.id for line in bundle.lines):
+        elif item and any(line.item_id == item.id for line in bundle.lines):
             flash(
                 f"'{item.name}' is already in '{bundle.name}' — remove it and re-add it "
                 "to change the quantity.",
                 "error",
             )
+        elif group and any(line.group_id == group.id for line in bundle.lines):
+            flash(
+                f"'{group.name}' is already in '{bundle.name}' — remove it and re-add it "
+                "to change the quantity.",
+                "error",
+            )
         else:
-            db.session.add(KitBundleLine(bundle_id=bundle.id, item_id=item.id, quantity=quantity))
+            name = item.name if item else group.name
+            db.session.add(
+                KitBundleLine(
+                    bundle_id=bundle.id,
+                    item_id=item.id if item else None,
+                    group_id=group.id if group else None,
+                    quantity=quantity,
+                )
+            )
             db.session.commit()
-            flash(f"Added {quantity} x {item.name} to '{bundle.name}'.", "success")
+            flash(f"Added {quantity} x {name} to '{bundle.name}'.", "success")
         return redirect(url_for("admin_bundles"))
 
     @app.route("/admin/bundles/<int:bundle_id>/lines/<int:line_id>/delete", methods=["POST"])
@@ -915,10 +1117,10 @@ def register_routes(app):
     def delete_bundle_line(bundle_id, line_id):
         line = KitBundleLine.query.filter_by(id=line_id, bundle_id=bundle_id).first_or_404()
         bundle_name = line.bundle.name
-        item_name = line.item.name
+        line_name = line.name
         db.session.delete(line)
         db.session.commit()
-        flash(f"Removed '{item_name}' from '{bundle_name}'.", "success")
+        flash(f"Removed '{line_name}' from '{bundle_name}'.", "success")
         return redirect(url_for("admin_bundles"))
 
     # -- archived items --

@@ -13,6 +13,14 @@ class Category(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(80), unique=True, nullable=False)
+    # Lets the committee hide an entire category from the member-facing
+    # request pages (e.g. "Cage" storage the club doesn't want members
+    # browsing) while keeping it fully visible and manageable on the admin
+    # side. server_default is set (not just default=) so that adding this
+    # column to an already-populated production table backfills existing
+    # rows as visible rather than leaving them NULL - see _ensure_schema in
+    # app.py, which adds this column to databases created before it existed.
+    member_visible = db.Column(db.Boolean, nullable=False, default=True, server_default=db.text("true"))
 
     subcategories = db.relationship(
         "Subcategory", backref="category", lazy=True, order_by="Subcategory.name"
@@ -137,18 +145,37 @@ class KitBundle(db.Model):
 
 
 class KitBundleLine(db.Model):
-    """One line inside a KitBundle: a specific KitItem and how many of it the
-    bundle includes (e.g. the 'Trad Rack' bundle might have one line for
-    'Set of Nuts' x1 and another for 'Cams' x1)."""
+    """One line inside a KitBundle: how many of *either* a specific KitItem
+    or an ItemGroup the bundle includes (never both) - e.g. the 'Trad Rack'
+    bundle might have a line for the specific 'Set of Nuts' item, and also a
+    line for the 'Helmets' group, letting the committee pick which helmet to
+    actually hand over exactly like a member requesting Helmets on its own."""
 
     __tablename__ = "kit_bundle_lines"
 
     id = db.Column(db.Integer, primary_key=True)
     bundle_id = db.Column(db.Integer, db.ForeignKey("kit_bundles.id"), nullable=False)
-    item_id = db.Column(db.Integer, db.ForeignKey("kit_items.id"), nullable=False)
+    # Exactly one of item_id/group_id is set per line - enforced in the
+    # add_bundle_line route, not at the database level, matching how the
+    # rest of the app (e.g. add_to_basket) already handles "one of several
+    # optional fields" without a DB constraint.
+    item_id = db.Column(db.Integer, db.ForeignKey("kit_items.id"), nullable=True)
+    group_id = db.Column(db.Integer, db.ForeignKey("item_groups.id"), nullable=True)
     quantity = db.Column(db.Integer, nullable=False, default=1)
 
     item = db.relationship("KitItem")
+    group = db.relationship("ItemGroup")
+
+    @property
+    def name(self):
+        return self.group.name if self.group_id else self.item.name
+
+    @property
+    def active(self):
+        """Whether this line still points at something a member could
+        actually be given: an active KitItem, or a group that still has at
+        least one active item left in it."""
+        return bool(self.group.active_items) if self.group_id else self.item.active
 
 
 class SignOut(db.Model):

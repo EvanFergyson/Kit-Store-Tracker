@@ -46,7 +46,11 @@ body {
 }
 
 .site-header {
-  background: var(--color-primary);
+  /* Black rather than --color-primary red: the real crest artwork (logo.svg)
+     is drawn on a black canvas with no transparency, so a black header lets
+     it sit flush with no visible background box around it. Red stays the
+     brand colour everywhere else (buttons, links, focus rings). */
+  background: #000000;
   color: #fff;
 }
 
@@ -54,17 +58,27 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 1rem;
   padding: 0.9rem 1.25rem;
+  flex-wrap: wrap;
 }
 
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   color: #fff;
   font-weight: 700;
   text-decoration: none;
   font-size: 1.1rem;
 }
 
+.brand-logo { height: 36px; width: auto; flex-shrink: 0; }
+
 .site-header nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   color: #eef3ef;
   text-decoration: none;
   margin-left: 1.1rem;
@@ -72,6 +86,42 @@ body {
 }
 
 .site-header nav a:hover { text-decoration: underline; }
+
+.nav-icon { width: 16px; height: 16px; flex-shrink: 0; }
+
+/* Search box sits between the brand and the nav links in the header. Plain
+   GET form (no JS needed for it to work) submitting straight to the search
+   results page. */
+.nav-search {
+  position: relative;
+  flex: 1 1 200px;
+  max-width: 320px;
+}
+
+.nav-search-icon {
+  position: absolute;
+  left: 0.65rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  color: rgba(255, 255, 255, 0.75);
+  pointer-events: none;
+}
+
+.nav-search input {
+  width: 100%;
+  padding: 0.4rem 0.75rem 0.4rem 2rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+.nav-search input::placeholder { color: rgba(255, 255, 255, 0.75); }
+.nav-search input:focus { background: #fff; color: var(--color-text); }
+.nav-search input:focus + .nav-search-icon { color: var(--color-muted); }
 
 main.container { padding-top: 1.75rem; padding-bottom: 3rem; }
 
@@ -202,10 +252,27 @@ th { color: var(--color-muted); font-size: 0.8rem; text-transform: uppercase; le
    whatever space is left over (e.g. Basket's Remove column). */
 .col-tight { width: 1%; white-space: nowrap; }
 
-td.actions { display: flex; gap: 0.4rem; align-items: center; }
-td.actions form { display: inline; }
+td.actions, span.actions { display: flex; gap: 0.4rem; align-items: center; flex-shrink: 0; }
+td.actions form, span.actions form { display: inline; }
+/* ...except a real multi-field .inline-form nested inside one of these (e.g.
+   the bundle edit form inside its <details>) - that still needs its normal
+   grid layout, not squashed to display:inline like the single-button forms
+   this rule is otherwise meant for. Two classes beats one class + one
+   element, so this wins regardless of order. */
+span.actions .inline-form { display: grid; }
 
 .empty-state { color: var(--color-muted); font-style: italic; }
+
+/* Plain inline links inside body text (e.g. "Browse kit" on the empty
+   request list, "Let us know" on the request page) had no rule of their own
+   and were falling back to the browser default blue/underline - jarring
+   against the red branding used everywhere else a link appears. */
+.empty-state a, main p a {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.empty-state a:hover, main p a:hover { text-decoration: none; }
 
 .flash-stack { margin-bottom: 1.25rem; }
 
@@ -233,6 +300,7 @@ td.actions form { display: inline; }
 .badge-collected { background: #e6edfb; color: var(--color-info); }
 .badge-archived { background: #eef0ee; color: var(--color-muted); }
 .badge-out { background: #fdf1de; color: #92600a; }
+.badge-group { background: #e6edfb; color: var(--color-info); text-transform: none; }
 
 .two-col {
   display: grid;
@@ -324,7 +392,18 @@ h3 { font-size: 1rem; margin: 0 0 0.5rem; }
   align-items: flex-start;
   gap: 1rem;
   margin-bottom: 0.5rem;
+  flex-wrap: wrap;
 }
+
+/* <details>/<summary> needs no JS to show/hide the edit form below it - the
+   browser handles the open/closed toggle. This just makes the <summary>
+   look like the other small buttons next to it instead of a bare disclosure
+   triangle. */
+.edit-bundle-details summary {
+  list-style: none;
+  cursor: pointer;
+}
+.edit-bundle-details summary::-webkit-details-marker { display: none; }
 
 /* Rows hidden by the category/subcategory filter JS must stay hidden even
    though the mobile rule below sets `tr { display: block }` (a same-priority
