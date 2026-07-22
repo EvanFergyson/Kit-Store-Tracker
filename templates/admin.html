@@ -26,6 +26,9 @@
               </div>
             {% endif %}
           </div>
+          <p class="empty-state">
+            Pickup: {{ group.pickup_display or '—' }} &middot; Return: {{ group.return_display or '—' }}
+          </p>
           {% if group.message %}<p class="empty-state">&ldquo;{{ group.message }}&rdquo;</p>{% endif %}
           <table>
             <thead><tr><th>Item</th><th>Qty</th><th></th></tr></thead>
@@ -74,6 +77,10 @@
     <a class="dashboard-link-card" href="{{ url_for('admin_archived') }}">
       <span class="count">{{ counts.archived }}</span>
       <span class="label">Archived items</span>
+    </a>
+    <a class="dashboard-link-card" href="{{ url_for('sign_in_out') }}">
+      <span class="count">{{ counts.taken_out }}</span>
+      <span class="label">Kit currently taken out</span>
     </a>
     <a class="dashboard-link-card" href="{{ url_for('admin_resolved') }}">
       <span class="count">{{ counts.resolved }}</span>

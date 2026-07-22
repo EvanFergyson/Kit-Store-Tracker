@@ -8,13 +8,15 @@
     <p class="empty-state">The most recently approved or denied member requests.</p>
     {% if resolved_requests %}
       <table>
-        <thead><tr><th>Name</th><th>Item</th><th>Qty</th><th>Status</th><th>Resolved</th><th>Fulfilment</th></tr></thead>
+        <thead><tr><th>Name</th><th>Item</th><th>Qty</th><th>Pickup</th><th>Return</th><th>Status</th><th>Resolved</th><th>Fulfilment</th></tr></thead>
         <tbody>
           {% for r in resolved_requests %}
           <tr>
             <td>{{ r.requester_name }}</td>
             <td>{{ r.item_name }}</td>
             <td>{{ r.quantity }}</td>
+            <td>{{ r.pickup_display or '—' }}</td>
+            <td>{{ r.return_display or '—' }}</td>
             <td><span class="badge badge-{{ r.status }}">{{ r.status }}</span></td>
             <td>{{ r.resolved_at.strftime('%d %b %Y') if r.resolved_at else '' }}</td>
             <td>

@@ -4,7 +4,57 @@
   <h1>Sign Kit In / Out</h1>
 
   <section class="card">
-    <h2>Sign Out an Item</h2>
+    <h2>Ready for Collection</h2>
+    <p class="empty-state">Approved requests waiting to be picked up &mdash; collecting one here signs it out automatically, no need to re-enter it below.</p>
+    {% if ready_for_collection %}
+      <table>
+        <thead><tr><th>Item</th><th>Qty</th><th>Requested By</th><th>Pickup</th><th></th></tr></thead>
+        <tbody>
+          {% for r in ready_for_collection %}
+          <tr>
+            <td>{{ r.item_name }}{% if r.group_id %} <span class="badge badge-group">Multiple options</span>{% endif %}</td>
+            <td>{{ r.quantity }}</td>
+            <td>{{ r.requester_name }}</td>
+            <td>{{ r.pickup_display or '—' }}</td>
+            <td>
+              {% if r.group_id %}
+                {% set group = r.matching_group %}
+                {% set choices = group.active_items if group else [] %}
+                {% if choices %}
+                  <form method="post" action="{{ url_for('collect_request', request_id=r.id) }}" class="basket-add-form">
+                    <select name="item_id" required aria-label="Choose which item to hand over for {{ r.item_name }}">
+                      <option value="" disabled selected>Select item&hellip;</option>
+                      {% for choice in choices %}
+                        <option value="{{ choice.id }}" {% if choice.quantity_available < r.quantity %}disabled{% endif %}>
+                          {{ choice.name }} ({{ choice.quantity_available }} available)
+                        </option>
+                      {% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn-small btn-primary">Confirm &amp; Collect</button>
+                  </form>
+                {% else %}
+                  <small class="empty-state">No items left in this group &mdash; sign out manually</small>
+                {% endif %}
+              {% elif r.matching_item %}
+                <form method="post" action="{{ url_for('collect_request', request_id=r.id) }}">
+                  <button type="submit" class="btn btn-small btn-primary">Collect</button>
+                </form>
+              {% else %}
+                <small class="empty-state">No matching item &mdash; sign out manually</small>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="empty-state">Nothing waiting for collection right now.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Sign Out Manually</h2>
+    <p class="empty-state">For walk-ins or anything without a request on file.</p>
     <form method="post" action="{{ url_for('sign_out_item') }}" class="inline-form">
       <div>
         <label for="filter-category">Category</label>

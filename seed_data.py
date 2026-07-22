@@ -66,6 +66,23 @@ CATALOG = {
         "Tent",
         "Other",
     ],
+    # Its own top-level category (not just an "Other" subcategory) so it gets
+    # its own card on Kit Inventory and Request Kit, per club committee
+    # request - each region below is a subcategory, each guidebook title its
+    # own KitItem (never grouped: unlike e.g. Sport Quickdraws, one guidebook
+    # isn't an interchangeable substitute for another). "Books" under "Other"
+    # still exists separately and still holds OS maps - deliberately not
+    # reused here to avoid two same-named things confusing the admin UI.
+    "Guidebooks": [
+        "Wales",
+        "Peaks and Lakes",
+        "South and West",
+        "Wye Valley",
+        "Yorkshire",
+        "Scotland",
+        "Spain",
+        "France",
+    ],
 }
 
 # Category names in here start out hidden from the member-facing Request Kit
@@ -150,7 +167,9 @@ KIT_ITEMS = [
     ("first_aid_red", "Red first aid kits", "Other", "Health and Safety", 3, 3, None),
     ("first_aid_brown_bag", "Brown bag of first aid gear", "Other", "Health and Safety", 1, 1, None),
     ("storm_shelters", "Storm shelters, all fit minimum 4 people", "Other", "Health and Safety", 5, 5, None),
-    ("guidebooks", "Guidebooks for Uk, france, spain, etc", "Other", "Books", 62, 57, None),
+    # Replaced by the real itemised list under "Guidebooks" below - this was
+    # a placeholder count from before anyone had actually gone through the
+    # shelf and listed real titles.
     ("os_maps", "OS maps", "Other", "Books", 27, 27, None),
     ("climbing_shoes", "Climbing shoes", "Other", "Misc Climbing", 4, 0, "spreadsheet quantity was 'Lots'"),
     ("clip_sticks", "Clip Sticks", "Other", "Misc Climbing", 2, 2, None),
@@ -212,6 +231,62 @@ KIT_ITEMS = [
     ("other_washing_tub", "Red washing up tub", "Cage", "Other", 2, 2, None),
     ("other_bags", "Bags", "Cage", "Other", 4, 4, None),
     ("other_guy_lines", "Spare guy lines", "Cage", "Other", 1, 1, None),
+    # Guidebooks, itemised from a physical count of the kit store shelf -
+    # quantity_total/available both set to the count found (no evidence any
+    # are currently signed out), description holds the publisher/author.
+    ("book_south_wales_sport_2016", "South Wales Sport 2016", "Guidebooks", "Wales", 1, 1, "RockFax"),
+    ("book_snowdonia_walks_scrambles_2020", "Snowdonia Mountain Walks and Scrambles 2020", "Guidebooks", "Wales", 1, 1, "RockFax"),
+    ("book_gower_rock_2020", "Gower Rock 2nd edition 2020", "Guidebooks", "Wales", 1, 1, "Stuart Llewellyn & Matt Woodfield"),
+    ("book_tremadog_2000", "Tremadog 2000", "Guidebooks", "Wales", 4, 4, "Climbers Club"),
+    ("book_gower_se_wales_2003", "Gower & South East Wales 2003", "Guidebooks", "Wales", 1, 1, "South Wales Mountaineering Club"),
+    ("book_snowdonia_rock_2005", "Rock Climbing In Snowdonia 2005", "Guidebooks", "Wales", 1, 1, "Francis Lincoln"),
+    ("book_nwales_classics_2010", "North Wales Classics 2010", "Guidebooks", "Wales", 2, 2, "RockFax"),
+    ("book_nwales_climbs_2013", "North Wales Climbs 2013", "Guidebooks", "Wales", 1, 1, "Ground Up"),
+    ("book_nwales_climbs_2023", "North Wales Climbs 2023", "Guidebooks", "Wales", 1, 1, "RockFax"),
+    ("book_nwales_rock_2009", "North Wales Rock 2009", "Guidebooks", "Wales", 1, 1, "RockFax"),
+    ("book_nwales_bouldering_vol1_2021", "North Wales Bouldering Volume 1 2021", "Guidebooks", "Wales", 1, 1, "Ground Up"),
+
+    ("book_peak_ne_2007", "Peak NE 2007", "Guidebooks", "Peaks and Lakes", 3, 3, "RockFax"),
+    ("book_peak_rock_climbing_1996", "Rock Climbing in the Peak District 1996", "Guidebooks", "Peaks and Lakes", 1, 1, "Constable"),
+    ("book_peak_district_climbing_2008", "Peak District Climbing 2008", "Guidebooks", "Peaks and Lakes", 1, 1, "Vertebrate"),
+    ("book_roaches_2009", "The Roaches 2009", "Guidebooks", "Peaks and Lakes", 1, 1, "BMC"),
+    ("book_peak_bouldering_2023", "Peak Bouldering 2023", "Guidebooks", "Peaks and Lakes", 1, 1, "RockFax"),
+    ("book_roaches_2004", "The Roaches 2004", "Guidebooks", "Peaks and Lakes", 2, 2, "BMC"),
+    ("book_stanage_2007", "Stanage 2007", "Guidebooks", "Peaks and Lakes", 2, 2, "BMC"),
+    ("book_chatsworth_1996", "Chatsworth 1996", "Guidebooks", "Peaks and Lakes", 4, 4, "BMC"),
+    ("book_lake_district_rock_2015", "Lake District Rock 2015", "Guidebooks", "Peaks and Lakes", 2, 2, "Wired Guidebooks"),
+
+    ("book_west_country_climbs_2010", "West Country Climbs 2010", "Guidebooks", "South and West", 1, 1, "RockFax"),
+    ("book_south_devon_dartmoor_1995", "South Devon and Dartmoor 1995", "Guidebooks", "South and West", 1, 1, "Cordee"),
+    ("book_north_devon_cornwall_1988", "North Devon and Cornwall 1988", "Guidebooks", "South and West", 1, 1, "Climbers Club"),
+    ("book_se_england_sandstone_2010", "Sandstone Climbing in South East England 2010", "Guidebooks", "South and West", 1, 1, "Jingo Wobbly"),
+    ("book_southern_sandstone_bouldering_2010", "Southern Sandstone Bouldering 2010", "Guidebooks", "South and West", 1, 1, "SSB Guides"),
+    ("book_south_devon_dartmoor_supplement_2007", "South Devon and Dartmoor Supplement 2007", "Guidebooks", "South and West", 1, 1, "Cordee"),
+
+    ("book_lower_wye_valley_2007", "Lower Wye Valley 2007", "Guidebooks", "Wye Valley", 1, 1, "Climbers Club"),
+    ("book_simmonds_yat_2010", "Simmonds Yat 2010", "Guidebooks", "Wye Valley", 1, 1, "Climbers Club"),
+    ("book_simonside_hills_2008", "Simonside Hills 2008", "Guidebooks", "Wye Valley", 1, 1, "Northumbria Mountaineering Club & CLIMBER"),
+    ("book_west_midlands_rock_1995", "West Midlands Rock 1995", "Guidebooks", "Wye Valley", 1, 1, "Cicerone"),
+    ("book_forest_of_dean_sandstone_vol3_2006", "The Sandstone Outcrops of the Forest of Dean Volume 3 2006", "Guidebooks", "Wye Valley", 1, 1, "Climbers Club"),
+
+    ("book_yorkshire_limestone_2005", "Yorkshire Limestone 2005", "Guidebooks", "Yorkshire", 1, 1, "Yorkshire Mountaineering Club"),
+    ("book_yorkshire_peak_limestone_1991", "Yorkshire and the Peak District Limestone 1991", "Guidebooks", "Yorkshire", 1, 1, "Crowood"),
+
+    ("book_bernina_bregaglia_1995", "Bernina and Bregaglia 1995", "Guidebooks", "Scotland", 2, 2, "Alpine Club Guide Books"),
+    ("book_scottish_winter_climbs_1996", "Scottish Winter Climbs 1996", "Guidebooks", "Scotland", 1, 1, "The Scottish Mountaineering Club"),
+    ("book_cairngorms_1995", "The Cairngorms 1995", "Guidebooks", "Scotland", 1, 1, "The Scottish Mountaineering Club"),
+    ("book_highland_outcrops_1998", "Highland Outcrops 1998", "Guidebooks", "Scotland", 1, 1, "The Scottish Mountaineering Club"),
+    ("book_ben_nevis_2002", "Ben Nevis 2002", "Guidebooks", "Scotland", 1, 1, "The Scottish Mountaineering Club"),
+    ("book_winter_climbs_cairngorms_2011", "Winter Climbs In the Cairngorms 2011", "Guidebooks", "Scotland", 1, 1, "Cicerone"),
+
+    ("book_pyrenees_rock_climbs_1990", "Rock Climbs in the Pyrenees 1990", "Guidebooks", "Spain", 1, 1, "Cicerone"),
+    ("book_deportiva_valencia_2005", "Deportiva próxima a Valencia 2005", "Guidebooks", "Spain", 1, 1, "Escalada"),
+    ("book_el_chorro_2018_rockfax", "Spain: El Chorro 2018", "Guidebooks", "Spain", 2, 2, "RockFax"),
+    ("book_el_chorro_2013", "El Chorro 2013", "Guidebooks", "Spain", 1, 1, "Escalada en Malaga"),
+    ("book_el_chorro_topo_2018", "El Chorro Topo 2018", "Guidebooks", "Spain", 1, 1, "Climbing Lodge"),
+
+    ("book_font_fun_block_2012", "Fontainebleau Fun Block 2012", "Guidebooks", "France", 2, 2, "Jingo Wobbly"),
+    ("book_font_magique_2005", "Fontainebleau Magique 2005", "Guidebooks", "France", 1, 1, "Jingo Wobbly"),
 ]
 
 # Groups fold several specific variants of the same real item into one

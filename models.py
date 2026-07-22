@@ -220,6 +220,15 @@ class ItemRequest(db.Model):
     # Shared by every line item submitted together from one basket checkout, so
     # the admin page can display and resolve them as a single request.
     request_group = db.Column(db.String(32), nullable=True)
+    # Which club session the member will collect/return the kit at (e.g. "Taf
+    # Monday"), or "Other" - set once per checkout and copied onto every line
+    # in that request_group, same as message/requester_name. The *_other
+    # columns hold the free-text description when the member picked "Other"
+    # instead of one of the fixed sessions.
+    pickup_slot = db.Column(db.String(50), nullable=True)
+    pickup_other = db.Column(db.String(200), nullable=True)
+    return_slot = db.Column(db.String(50), nullable=True)
+    return_other = db.Column(db.String(200), nullable=True)
     # Set once an approved request has actually been handed over and turned into
     # a real SignOut record, so the admin page can tell "approved" apart from
     # "approved and collected" instead of the two systems drifting out of sync.
@@ -228,6 +237,14 @@ class ItemRequest(db.Model):
     resolved_at = db.Column(db.DateTime, nullable=True)
 
     fulfilled_signout = db.relationship("SignOut")
+
+    @property
+    def pickup_display(self):
+        return self.pickup_other if self.pickup_slot == "Other" else self.pickup_slot
+
+    @property
+    def return_display(self):
+        return self.return_other if self.return_slot == "Other" else self.return_slot
 
     @property
     def matching_item(self):

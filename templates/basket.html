@@ -34,12 +34,34 @@
 
     <section class="card narrow">
       <h2>Your Details</h2>
-      <form method="post">
+      <form method="post" id="checkout-form">
         <label for="requester_name">Your name</label>
         <input type="text" id="requester_name" name="requester_name" required>
 
         <label for="requester_email">Your email</label>
         <input type="email" id="requester_email" name="requester_email">
+
+        <label>When will you pick the kit up?</label>
+        <div class="session-options" data-session-group="pickup">
+          {% for session in kit_sessions %}
+            <label>
+              <input type="radio" name="pickup_slot" value="{{ session }}" required>
+              {{ session }}
+            </label>
+          {% endfor %}
+        </div>
+        <input type="text" name="pickup_other" class="session-other-input" data-session-other="pickup" placeholder="Tell us when/where" style="display:none;">
+
+        <label>When will you return it?</label>
+        <div class="session-options" data-session-group="return">
+          {% for session in kit_sessions %}
+            <label>
+              <input type="radio" name="return_slot" value="{{ session }}" required>
+              {{ session }}
+            </label>
+          {% endfor %}
+        </div>
+        <input type="text" name="return_other" class="session-other-input" data-session-other="return" placeholder="Tell us when/where" style="display:none;">
 
         <label for="message">Notes (dates needed, trip details, etc.)</label>
         <textarea id="message" name="message" rows="4"></textarea>
@@ -50,4 +72,28 @@
   {% else %}
     <p class="empty-state">Your request list is empty. <a href="{{ url_for('request_kit') }}">Browse kit</a> to add items.</p>
   {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Each pickup/return session group has its own "Other" text box, hidden
+  // until the member actually picks "Other" - and only required at that point,
+  // so the browser's built-in validation doesn't block submission over a box
+  // that isn't even relevant to the option they chose.
+  document.addEventListener("DOMContentLoaded", () => {
+    document.querySelectorAll("[data-session-group]").forEach((group) => {
+      const name = group.dataset.sessionGroup;
+      const otherInput = document.querySelector(`[data-session-other="${name}"]`);
+      if (!otherInput) return;
+
+      group.querySelectorAll('input[type="radio"]').forEach((radio) => {
+        radio.addEventListener("change", () => {
+          const isOther = radio.value === "Other" && radio.checked;
+          otherInput.style.display = isOther ? "" : "none";
+          otherInput.required = isOther;
+        });
+      });
+    });
+  });
+</script>
 {% endblock %}

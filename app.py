@@ -16,6 +16,13 @@ from models import Category, ItemGroup, ItemRequest, KitBundle, KitBundleLine, K
 LOGIN_MAX_ATTEMPTS = 5
 LOGIN_LOCKOUT_SECONDS = 30
 
+# Recurring club sessions offered on the checkout page for picking up/
+# returning kit, e.g. "Tuesday Bus - 6:45". "Other" is always appended so a
+# member whose plans don't fit one of these can describe it themselves - kept
+# as one shared list (rather than separate pickup/return lists) since the
+# same sessions apply to both.
+KIT_SESSIONS = ["Taf Monday", "Tuesday Bus - 6:45", "Thursday Bus - 6:45", "Other"]
+
 
 def create_app():
     app = Flask(__name__)
@@ -82,6 +89,16 @@ def _ensure_schema():
                 "kit_bundle_lines.item_id is still NOT NULL and this isn't Postgres - "
                 "delete instance/kitstore.db and restart the app to recreate it from scratch."
             )
+
+    # New pickup/return session columns on item_requests - same "add whatever
+    # columns are missing" idea as above, just looped since there are four of
+    # them and they're all plain nullable strings.
+    request_columns = {col["name"] for col in inspector.get_columns("item_requests")}
+    for column_name in ("pickup_slot", "pickup_other", "return_slot", "return_other"):
+        if column_name not in request_columns:
+            column_ddl = CreateColumn(ItemRequest.__table__.columns[column_name]).compile(dialect=db.engine.dialect)
+            with db.engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE item_requests ADD COLUMN {column_ddl}"))
 
 
 def login_required(view_func):
@@ -240,6 +257,8 @@ def group_pending_requests(requests):
                 "requester_name": r.requester_name,
                 "requester_email": r.requester_email,
                 "message": r.message,
+                "pickup_display": r.pickup_display,
+                "return_display": r.return_display,
                 "created_at": r.created_at,
                 "lines": [],  # named "lines" not "items" - dicts already have a built-in .items()
             }
@@ -474,11 +493,23 @@ def register_routes(app):
             requester_name = request.form.get("requester_name", "").strip()
             requester_email = request.form.get("requester_email", "").strip()
             message = request.form.get("message", "").strip()
+            pickup_slot = request.form.get("pickup_slot", "").strip()
+            pickup_other = request.form.get("pickup_other", "").strip()
+            return_slot = request.form.get("return_slot", "").strip()
+            return_other = request.form.get("return_other", "").strip()
 
             if not requester_name:
                 flash("Please enter your name.", "error")
             elif not line_items:
                 flash("Your request list is empty.", "error")
+            elif not pickup_slot:
+                flash("Please choose when you'll pick the kit up.", "error")
+            elif pickup_slot == "Other" and not pickup_other:
+                flash("Please describe when/where you'll pick the kit up.", "error")
+            elif not return_slot:
+                flash("Please choose when you'll return the kit.", "error")
+            elif return_slot == "Other" and not return_other:
+                flash("Please describe when/where you'll return the kit.", "error")
             else:
                 checkout_group_id = uuid.uuid4().hex
                 for line in line_items:
@@ -491,6 +522,10 @@ def register_routes(app):
                             message=message,
                             request_group=checkout_group_id,
                             group_id=line["group_id"],
+                            pickup_slot=pickup_slot,
+                            pickup_other=pickup_other if pickup_slot == "Other" else None,
+                            return_slot=return_slot,
+                            return_other=return_other if return_slot == "Other" else None,
                         )
                     )
                 db.session.commit()
@@ -499,7 +534,7 @@ def register_routes(app):
                 flash("Your request has been sent to the committee. We'll be in touch!", "success")
                 return redirect(url_for("request_kit"))
 
-        return render_template("basket.html", line_items=line_items)
+        return render_template("basket.html", line_items=line_items, kit_sessions=KIT_SESSIONS)
 
     @app.route("/basket/update/<key>", methods=["POST"])
     def update_basket_item(key):
@@ -600,6 +635,16 @@ def register_routes(app):
         categories = Category.query.order_by(Category.name).all()
         subcategories = Subcategory.query.order_by(Subcategory.name).all()
         items = KitItem.query.filter_by(active=True).order_by(KitItem.name).all()
+        # Approved requests that haven't actually left the building yet - the
+        # committee collects from here instead of re-typing an approved
+        # request's borrower/item/quantity into the manual form below, and for
+        # a group request (e.g. "Nuts") this is also where they pick which
+        # specific size is actually being handed over.
+        ready_for_collection = (
+            ItemRequest.query.filter_by(status="approved", fulfilled_signout_id=None)
+            .order_by(ItemRequest.resolved_at.asc())
+            .all()
+        )
         active_sign_outs = (
             SignOut.query.filter_by(signed_in_at=None).order_by(SignOut.signed_out_at.desc()).all()
         )
@@ -618,6 +663,7 @@ def register_routes(app):
             categories=categories,
             subcategories=subcategories,
             items=items,
+            ready_for_collection=ready_for_collection,
             active_sign_outs=active_sign_outs,
             sign_out_history=sign_out_history,
             borrower_names=borrower_names,
@@ -690,6 +736,7 @@ def register_routes(app):
             "bundles": KitBundle.query.count(),
             "archived": KitItem.query.filter_by(active=False).count(),
             "resolved": ItemRequest.query.filter(ItemRequest.status != "pending").count(),
+            "taken_out": SignOut.query.filter_by(signed_in_at=None).count(),
         }
         return render_template(
             "admin.html",
@@ -1206,13 +1253,17 @@ def register_routes(app):
         actually picked the kit up, so the two systems stay in sync instead of
         relying on the committee to remember to do this manually."""
         item_request = ItemRequest.query.get_or_404(request_id)
+        # Collect can be actioned from either Sign In/Out (the usual place) or
+        # Resolved Requests, so send the committee back to whichever page they
+        # actually clicked from instead of always landing on Resolved Requests.
+        back_to = request.referrer or url_for("admin_resolved")
 
         if item_request.status != "approved":
             flash("Only approved requests can be marked as collected.", "error")
-            return redirect(url_for("admin_resolved"))
+            return redirect(back_to)
         if item_request.fulfilled_signout_id:
             flash("This request has already been marked as collected.", "error")
-            return redirect(url_for("admin_resolved"))
+            return redirect(back_to)
 
         if item_request.group_id:
             # A group request (e.g. "Nuts") doesn't name one specific KitItem,
@@ -1227,7 +1278,7 @@ def register_routes(app):
                     f"Choose which specific item to hand over for '{item_request.item_name}'.",
                     "error",
                 )
-                return redirect(url_for("admin_resolved"))
+                return redirect(back_to)
         else:
             item = item_request.matching_item
             if not item:
@@ -1235,7 +1286,7 @@ def register_routes(app):
                     f"No catalog item matches '{item_request.item_name}' — sign it out manually from Sign In/Out instead.",
                     "error",
                 )
-                return redirect(url_for("admin_resolved"))
+                return redirect(back_to)
 
         if item_request.quantity > item.quantity_available:
             flash(
@@ -1243,7 +1294,7 @@ def register_routes(app):
                 "adjust the loan or sign it out manually.",
                 "error",
             )
-            return redirect(url_for("admin_resolved"))
+            return redirect(back_to)
 
         item.quantity_available -= item_request.quantity
         signout = SignOut(
@@ -1262,7 +1313,7 @@ def register_routes(app):
             "and marked the request as collected.",
             "success",
         )
-        return redirect(url_for("admin_resolved"))
+        return redirect(back_to)
 
 
 app = create_app()
