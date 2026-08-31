@@ -58,6 +58,7 @@ app.py              # Routes and app factory
 config.py           # Reads settings from .env
 models.py           # KitItem, SignOut, ItemRequest (SQLAlchemy models)
 seed_data.py         # Optional sample data
+migrate_to_postgres.py  # One-time copy of instance/kitstore.db into a fresh Postgres DB
 templates/           # Jinja2 HTML templates
 static/css/style.css
 static/js/main.js
@@ -93,7 +94,7 @@ Since this targets free hosting, two easy options:
 2. Create a new "Web Service" on Render, connect the repo.
 3. Build command: `pip install -r requirements.txt`. Start command: `gunicorn app:app`.
 4. Add `SECRET_KEY` and `COMMITTEE_PASSWORD` as environment variables in Render's dashboard.
-5. Note: Render's free tier filesystem is ephemeral, so the SQLite file resets on redeploy. For a persistent store, add a free Render PostgreSQL instance and set `DATABASE_URL` instead (the app already supports this via `config.py`).
+5. Render's free tier filesystem is ephemeral (the SQLite file resets on every redeploy/restart/spin-down), and Render's own free Postgres expires after 30 days. Instead, create a free [Neon](https://neon.tech) Postgres project (permanent, no card) and set its connection string as `DATABASE_URL` in Render — `config.py` already supports this. If you already have data in `instance/kitstore.db`, run `python migrate_to_postgres.py "<neon-connection-string>"` once, locally, to copy it all over before pointing Render at the new database (safe to re-run: refuses to touch a target that already has data).
 
 **PythonAnywhere**
 1. Upload the project (or `git clone` it in a Bash console).
@@ -104,4 +105,4 @@ Since this targets free hosting, two easy options:
 ## Notes for further development
 
 - Forms use plain HTML + Flask, matching your existing HTML/CSS/JS experience — no JS framework required, but `static/js/main.js` is there if you want to add client-side interactivity (e.g. live search/filtering of the kit table).
-- All database logic lives in `models.py` / `app.py`, kept deliberately simple (no blueprints, no Flask-WTF) so it's easy to extend as you learn more.
+- All database logic lives in `models.py` / `app.py`, kept deliberately simple (no blueprints) so it's easy to extend as you learn more.
