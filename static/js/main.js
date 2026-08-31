@@ -304,33 +304,6 @@ function initChipFilter(chipsContainerId, rowClassName, noMatchMessageId) {
   });
 }
 
-// Free-text version of the same row-filtering idea, for pages with too many
-// items/categories for a dropdown or chip list to make sense (e.g. Sign
-// In/Out, which lists the whole store). Each row carries its searchable text
-// (name, category, subcategory) lowercased into data-search; typing filters
-// down to rows whose data-search contains the typed text, updated on every
-// keystroke rather than needing a submit.
-function initTextFilter(inputId, rowClassName, noMatchMessageId) {
-  const input = document.getElementById(inputId);
-  if (!input) return;
-
-  const rows = Array.from(document.getElementsByClassName(rowClassName));
-  const noMatchMessage = noMatchMessageId ? document.getElementById(noMatchMessageId) : null;
-
-  function applyFilter() {
-    const query = input.value.trim().toLowerCase();
-    let visibleCount = 0;
-    rows.forEach((row) => {
-      const visible = !query || (row.dataset.search || "").includes(query);
-      row.hidden = !visible;
-      if (visible) visibleCount += 1;
-    });
-    if (noMatchMessage) noMatchMessage.hidden = visibleCount !== 0;
-  }
-
-  input.addEventListener("input", applyFilter);
-}
-
 // The checkout form's pickup/return session pickers each have their own
 // "Other" text box, hidden until the member actually picks "Other" - and
 // only required at that point, so the browser's built-in validation doesn't

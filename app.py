@@ -868,14 +868,26 @@ def register_routes(app):
     @app.route("/sign-in-out")
     @login_required
     def sign_in_out():
-        items = KitItem.query.filter_by(active=True).order_by(KitItem.name).all()
-        # Deliberately not filtered to member_visible categories or to
-        # ungrouped-only items like the member-facing pages: the committee
-        # needs to sign out anything real (including "Cage" storage members
-        # never see), and needs the option to hand over one exact KitItem
-        # directly even when it's also part of a group.
-        groups = [group for group in ItemGroup.query.order_by(ItemGroup.name).all() if group.active_items]
-        kit_entries = build_kit_entries(items, groups)
+        # "Sign Out Manually" used to list every active KitItem/ItemGroup as
+        # one flat 200+-row table on this page - deliberately not filtered to
+        # member_visible categories or to ungrouped-only items like the
+        # member-facing pages, since the committee needs to sign out anything
+        # real (including "Cage" storage members never see), and needs the
+        # option to hand over one exact KitItem directly even when it's also
+        # part of a group. That's still true, but showing it all at once made
+        # this page enormous - it's now a category-card grid instead (mirrors
+        # admin_inventory()'s category_cards), and the actual per-item list
+        # + sign-out forms live one click in, at sign_in_out_category().
+        items = KitItem.query.filter_by(active=True).all()
+        groups = [group for group in ItemGroup.query.all() if group.active_items]
+        entries_by_category = {}
+        for entry in build_kit_entries(items, groups):
+            entries_by_category.setdefault(entry["category"].id, []).append(entry)
+        manual_category_cards = [
+            {"category": category, "item_count": len(entries_by_category[category.id])}
+            for category in Category.query.order_by(Category.name).all()
+            if category.id in entries_by_category
+        ]
         # Approved requests that haven't actually left the building yet - the
         # committee collects from here instead of re-typing an approved
         # request's borrower/item/quantity into the manual form below, and for
@@ -893,6 +905,39 @@ def register_routes(app):
         # the committee has a full audit trail to track activity over time -
         # separate from active_sign_outs above, which only covers unreturned loans.
         sign_out_history = SignOut.query.order_by(SignOut.signed_out_at.desc()).all()
+        return render_template(
+            "sign_in_out.html",
+            manual_category_cards=manual_category_cards,
+            ready_for_collection=ready_for_collection,
+            active_sign_outs=active_sign_outs,
+            sign_out_history=sign_out_history,
+            active_tab="sign_in_out",
+        )
+
+    @app.route("/sign-in-out/category/<int:category_id>")
+    @login_required
+    def sign_in_out_category(category_id):
+        """The actual per-item sign-out list for one category, one click in
+        from the category-card grid on sign_in_out() - see the comment
+        there for why this isn't all shown on one page any more."""
+        category = Category.query.get_or_404(category_id)
+        items = (
+            KitItem.query.filter_by(active=True)
+            .join(Subcategory)
+            .filter(Subcategory.category_id == category.id)
+            .order_by(KitItem.name)
+            .all()
+        )
+        groups = [
+            group
+            for group in ItemGroup.query.join(Subcategory)
+            .filter(Subcategory.category_id == category.id)
+            .order_by(ItemGroup.name)
+            .all()
+            if group.active_items
+        ]
+        kit_entries = build_kit_entries(items, groups)
+        subcategories = Subcategory.query.filter_by(category_id=category.id).order_by(Subcategory.name).all()
         # Previously-used borrower names, so committee can autocomplete instead
         # of retyping (and to cut down on near-duplicate spellings of the same person).
         borrower_names = [
@@ -900,11 +945,10 @@ def register_routes(app):
             for row in db.session.query(SignOut.borrower_name).distinct().order_by(SignOut.borrower_name).all()
         ]
         return render_template(
-            "sign_in_out.html",
+            "sign_in_out_category.html",
+            category=category,
             kit_entries=kit_entries,
-            ready_for_collection=ready_for_collection,
-            active_sign_outs=active_sign_outs,
-            sign_out_history=sign_out_history,
+            subcategories=subcategories,
             borrower_names=borrower_names,
             active_tab="sign_in_out",
         )
@@ -941,7 +985,11 @@ def register_routes(app):
                 db.session.rollback()
                 flash(f"Only {e.item.quantity_available} of '{e.item.name}' available.", "error")
 
-        return redirect(url_for("sign_in_out"))
+        # Back to whichever page the form was on - almost always a
+        # sign_in_out_category() page now, so a committee member signing out
+        # several things to the same borrower stays on that category instead
+        # of being bounced to the top-level category grid after every item.
+        return redirect(request.referrer or url_for("sign_in_out"))
 
     @app.route("/sign-out/group", methods=["POST"])
     @login_required
@@ -956,17 +1004,19 @@ def register_routes(app):
         borrower_name = request.form.get("borrower_name", "").strip()
         notes = request.form.get("notes", "").strip()
 
+        back_to = request.referrer or url_for("sign_in_out")
+
         if not borrower_name:
             flash("Borrower name is required.", "error")
-            return redirect(url_for("sign_in_out"))
+            return redirect(back_to)
 
         splits, error = _parse_group_split_quantities(group.active_items, request.form)
         if error:
             flash(error, "error")
-            return redirect(url_for("sign_in_out"))
+            return redirect(back_to)
         if not splits:
             flash(f"Enter a quantity for at least one item in '{group.name}'.", "error")
-            return redirect(url_for("sign_in_out"))
+            return redirect(back_to)
 
         checked_out_by = session.get("committee_name", "Committee")
         try:
@@ -984,12 +1034,12 @@ def register_routes(app):
                 "someone else may have just signed it out. Adjust and try again.",
                 "error",
             )
-            return redirect(url_for("sign_in_out"))
+            return redirect(back_to)
 
         total = sum(quantity for _, quantity in splits)
         summary = ", ".join(f"{quantity} x {item.name}" for item, quantity in splits)
         flash(f"Signed out {total} x {group.name} to {borrower_name} ({summary}).", "success")
-        return redirect(url_for("sign_in_out"))
+        return redirect(back_to)
 
     @app.route("/sign-in/<int:signout_id>", methods=["POST"])
     @login_required

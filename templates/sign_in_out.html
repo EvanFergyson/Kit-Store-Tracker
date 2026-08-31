@@ -4,12 +4,6 @@
   <h1>Sign Kit In / Out</h1>
   {% include "_admin_nav.html" %}
 
-  <datalist id="borrower-names">
-    {% for name in borrower_names %}
-      <option value="{{ name }}">
-    {% endfor %}
-  </datalist>
-
   <section class="card card-action">
     <h2>Ready for Collection</h2>
     <p class="empty-state">Approved requests waiting to be picked up &mdash; collecting one here signs it out automatically, no need to re-enter it below.</p>
@@ -70,71 +64,16 @@
 
   <section class="card card-action">
     <h2>Sign Out Manually</h2>
-    <p class="empty-state">For walk-ins or anything without a request on file. Type to find an item or group, then sign out straight from its row.</p>
-
-    <label for="sign-out-search">Search</label>
-    <input type="search" id="sign-out-search" placeholder="e.g. helmet, nuts, tent&hellip;">
-
-    {% if kit_entries %}
-      <div class="table-scroll">
-        <table>
-          <thead><tr><th>Item</th><th>Category</th><th>Available</th><th></th></tr></thead>
-          <tbody>
-            {% for entry in kit_entries %}
-            <tr class="kit-row" data-search="{{ (entry.name ~ ' ' ~ entry.category.name ~ ' ' ~ entry.subcategory.name)|lower }}">
-              <td>
-                {{ entry.name }}
-                {% if entry.kind == "group" %}<span class="badge badge-group">Multiple options</span>{% endif %}
-              </td>
-              <td data-label="Category">{{ entry.category.name }} &rsaquo; {{ entry.subcategory.name }}</td>
-              <td data-label="Available">{{ entry.quantity_available }} of {{ entry.quantity_total }}</td>
-              <td>
-                {% if entry.kind == "group" %}
-                  <details class="sign-out-group-details">
-                    <summary class="btn btn-small btn-primary">Sign Out (split)</summary>
-                    <form method="post" action="{{ url_for('sign_out_group') }}" class="sign-out-group-form">
-                      {{ csrf_field() }}
-                      <input type="hidden" name="group_id" value="{{ entry.id }}">
-                      <label for="group-{{ entry.id }}-borrower">Borrower name</label>
-                      <input type="text" id="group-{{ entry.id }}-borrower" name="borrower_name" list="borrower-names" required autocomplete="off">
-                      <p class="empty-state">Split across as many of these as it takes.</p>
-                      {% for item in entry.obj.active_items %}
-                        <div class="sign-out-group-row">
-                          <span>{{ item.name }} <small>({{ item.quantity_available }} available)</small></span>
-                          <div class="qty-stepper">
-                            <button type="button" class="qty-step qty-step-down" aria-label="Decrease quantity of {{ item.name }}" {% if item.quantity_available < 1 %}disabled{% endif %}>&minus;</button>
-                            <input type="number" name="quantity_{{ item.id }}" min="0" placeholder="0" inputmode="numeric" aria-label="Quantity of {{ item.name }}" {% if item.quantity_available < 1 %}disabled{% endif %}>
-                            <button type="button" class="qty-step qty-step-up" aria-label="Increase quantity of {{ item.name }}" {% if item.quantity_available < 1 %}disabled{% endif %}>+</button>
-                          </div>
-                        </div>
-                      {% endfor %}
-                      <p class="sign-out-group-total" aria-live="polite"></p>
-                      <label for="group-{{ entry.id }}-notes">Notes</label>
-                      <input type="text" id="group-{{ entry.id }}-notes" name="notes">
-                      <button type="submit" class="btn btn-small btn-primary">Confirm Sign Out</button>
-                    </form>
-                  </details>
-                {% else %}
-                  <form method="post" action="{{ url_for('sign_out_item') }}" class="sign-out-item-form">
-                    {{ csrf_field() }}
-                    <input type="hidden" name="item_id" value="{{ entry.id }}">
-                    <input type="text" name="borrower_name" list="borrower-names" required autocomplete="off" placeholder="Borrower name" aria-label="Borrower name">
-                    <div class="qty-stepper">
-                      <button type="button" class="qty-step qty-step-down" aria-label="Decrease quantity">&minus;</button>
-                      <input type="number" name="quantity" min="1" value="1" inputmode="numeric" aria-label="Quantity of {{ entry.name }}">
-                      <button type="button" class="qty-step qty-step-up" aria-label="Increase quantity">+</button>
-                    </div>
-                    <input type="text" name="notes" placeholder="Notes (optional)" aria-label="Notes">
-                    <button type="submit" class="btn btn-small btn-primary" {% if entry.quantity_available < 1 %}disabled{% endif %}>Sign Out</button>
-                  </form>
-                {% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+    <p class="empty-state">For walk-ins or anything without a request on file. Choose a category, then sign out straight from its row.</p>
+    {% if manual_category_cards %}
+      <div class="category-grid">
+        {% for card in manual_category_cards %}
+          <a class="category-card" href="{{ url_for('sign_in_out_category', category_id=card.category.id) }}">
+            <h3>{{ card.category.name }}</h3>
+            <div class="count">{{ card.item_count }} item{{ 's' if card.item_count != 1 else '' }}</div>
+          </a>
+        {% endfor %}
       </div>
-      <p id="no-search-match" class="empty-state" hidden>No kit matches that search.</p>
     {% else %}
       <p class="empty-state">No kit has been added to the store yet.</p>
     {% endif %}
@@ -208,12 +147,4 @@
       <p class="empty-state">No sign-outs have been recorded yet.</p>
     {% endif %}
   </details>
-{% endblock %}
-
-{% block scripts %}
-<script>
-  document.addEventListener("DOMContentLoaded", () => {
-    initTextFilter("sign-out-search", "kit-row", "no-search-match");
-  });
-</script>
 {% endblock %}
