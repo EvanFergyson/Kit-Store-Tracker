@@ -61,9 +61,20 @@ seed_data.py         # Optional sample data
 templates/           # Jinja2 HTML templates
 static/css/style.css
 static/js/main.js
+tests/               # pytest - CSRF + concurrency regression tests
 requirements.txt
+requirements-dev.txt # Adds pytest, for running tests/ locally
 Procfile             # For deployment (gunicorn)
 .env.example
+```
+
+## Running tests
+
+A small pytest suite covers the two hardest-to-catch-by-clicking-around bugs: the CSRF protection on every form, and the stock/name race conditions fixed in `_create_signout`/`_name_exists`. It runs against a throwaway temp SQLite file, never the real `instance/kitstore.db`.
+
+```bash
+pip install -r requirements-dev.txt
+pytest
 ```
 
 ## How it works

@@ -39,3 +39,6 @@ venv/
 instance/
 *.db
 *.db-journal
+
+# pytest
+.pytest_cache/
