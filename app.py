@@ -1,4 +1,5 @@
 import os
+import re
 import secrets
 import uuid
 from datetime import date, datetime
@@ -22,6 +23,11 @@ LOGIN_LOCKOUT_SECONDS = 30
 # as one shared list (rather than separate pickup/return lists) since the
 # same sessions apply to both.
 KIT_SESSIONS = ["Taf Monday", "Tuesday Bus - 6:45", "Thursday Bus - 6:45", "Other"]
+
+# Deliberately loose (just "something@something.something") - this only
+# exists to catch typos/garbage before it's stored against a request, not to
+# fully validate deliverability. The field itself stays optional.
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def create_app():
@@ -325,11 +331,13 @@ def register_routes(app):
 
     # Some browsers/crawlers request /favicon.ico at the site root regardless
     # of the <link rel="icon"> tag in base.html - without this route that
-    # request 404s even though the real icon file exists under /static/img.
+    # request 404s. There's no separate .ico file to serve (logo.svg is the
+    # only icon asset we have), so this just serves that same SVG; every
+    # browser that still probes /favicon.ico directly accepts an SVG there.
     @app.route("/favicon.ico")
     def favicon():
         return send_from_directory(
-            os.path.join(app.static_folder, "img"), "favicon.ico", mimetype="image/vnd.microsoft.icon"
+            os.path.join(app.static_folder, "img"), "logo.svg", mimetype="image/svg+xml"
         )
 
     @app.route("/request")
@@ -546,6 +554,8 @@ def register_routes(app):
 
             if not requester_name:
                 flash("Please enter your name.", "error")
+            elif requester_email and not EMAIL_RE.match(requester_email):
+                flash("That email address doesn't look right — check it and try again.", "error")
             elif not line_items:
                 flash("Your request list is empty.", "error")
             elif not pickup_slot:
@@ -954,7 +964,7 @@ def register_routes(app):
         if request.method == "POST":
             preselect_category_id = request.form.get("preselect_category_id", type=int)
             name = request.form.get("name", "").strip()
-            subcategory_id = request.form.get("subcategory_id")
+            subcategory_id = request.form.get("subcategory_id", type=int)
             quantity_total = parse_positive_int(request.form.get("quantity_total"))
             error_redirect = url_for("add_item", category_id=preselect_category_id) if preselect_category_id else url_for("add_item")
 
@@ -975,11 +985,11 @@ def register_routes(app):
                 )
                 return redirect(error_redirect)
 
-            group_id = request.form.get("group_id")
+            group_id = request.form.get("group_id", type=int)
             item = KitItem(
                 name=name,
-                subcategory_id=int(subcategory_id),
-                group_id=int(group_id) if group_id else None,
+                subcategory_id=subcategory_id,
+                group_id=group_id,
                 description=request.form.get("description", "").strip(),
                 location=request.form.get("location", "").strip(),
                 quantity_total=quantity_total,
@@ -1037,11 +1047,10 @@ def register_routes(app):
                     return redirect(url_for("edit_item", item_id=item.id))
 
             item.name = new_name or item.name
-            subcategory_id = request.form.get("subcategory_id")
+            subcategory_id = request.form.get("subcategory_id", type=int)
             if subcategory_id:
-                item.subcategory_id = int(subcategory_id)
-            group_id = request.form.get("group_id")
-            item.group_id = int(group_id) if group_id else None
+                item.subcategory_id = subcategory_id
+            item.group_id = request.form.get("group_id", type=int)
             item.location = request.form.get("location", item.location).strip()
             item.description = request.form.get("description", item.description or "").strip()
             item.quantity_total = new_total
@@ -1122,7 +1131,7 @@ def register_routes(app):
     @login_required
     def add_item_group():
         name = request.form.get("name", "").strip()
-        subcategory_id = request.form.get("subcategory_id")
+        subcategory_id = request.form.get("subcategory_id", type=int)
         description = request.form.get("description", "").strip()
 
         if not name:
@@ -1132,7 +1141,7 @@ def register_routes(app):
         elif ItemGroup.query.filter(func.lower(ItemGroup.name) == name.lower()).first():
             flash(f"A group named '{name}' already exists.", "error")
         else:
-            db.session.add(ItemGroup(name=name, subcategory_id=int(subcategory_id), description=description))
+            db.session.add(ItemGroup(name=name, subcategory_id=subcategory_id, description=description))
             db.session.commit()
             flash(f"Created group '{name}' — assign kit items to it from Add/Edit Kit Item.", "success")
         return redirect(url_for("admin_groups"))

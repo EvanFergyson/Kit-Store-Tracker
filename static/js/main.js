@@ -222,56 +222,12 @@ function initCascade(categorySelectId, subcategorySelectId, itemSelectId) {
   subcategorySelect.addEventListener("change", applySubcategoryFilter);
 }
 
-// Same idea as initCascade, but filters a list of elements (identified by
-// class name) instead of <select> options. Used on the "browse kit" page
-// where each item is a table row carrying data-category-id /
-// data-subcategory-id rather than being an <option>.
-function initListFilter(categorySelectId, subcategorySelectId, rowClassName, noMatchMessageId) {
-  const categorySelect = document.getElementById(categorySelectId);
-  const subcategorySelect = document.getElementById(subcategorySelectId);
-  if (!categorySelect || !subcategorySelect) return;
-
-  const subcategoryOptions = Array.from(subcategorySelect.options);
-  const rows = Array.from(document.getElementsByClassName(rowClassName));
-  const noMatchMessage = noMatchMessageId ? document.getElementById(noMatchMessageId) : null;
-
-  function applyRowFilter() {
-    const categoryId = categorySelect.value;
-    const subcategoryId = subcategorySelect.value;
-    let visibleCount = 0;
-    rows.forEach((row) => {
-      const matchesCategory = !categoryId || row.dataset.categoryId === categoryId;
-      const matchesSubcategory = !subcategoryId || row.dataset.subcategoryId === subcategoryId;
-      const visible = matchesCategory && matchesSubcategory;
-      row.hidden = !visible;
-      if (visible) visibleCount += 1;
-    });
-    // The server-rendered "no kit in the store" message only covers the case
-    // where there's genuinely nothing in the database - it has no idea a
-    // client-side filter just hid every row, so without this the table would
-    // silently go blank with no explanation when a filter matches nothing.
-    if (noMatchMessage) noMatchMessage.hidden = visibleCount !== 0;
-  }
-
-  function applyCategoryFilter() {
-    const categoryId = categorySelect.value;
-    subcategoryOptions.forEach((option) => {
-      if (!option.value) return;
-      option.hidden = Boolean(categoryId) && option.dataset.categoryId !== categoryId;
-    });
-    subcategorySelect.value = "";
-    applyRowFilter();
-  }
-
-  categorySelect.addEventListener("change", applyCategoryFilter);
-  subcategorySelect.addEventListener("change", applyRowFilter);
-}
-
-// Same idea as initListFilter, but as a row of clickable "chip" buttons
-// instead of a <select> dropdown - used on pages where the category is
-// already fixed by the page itself (e.g. a per-category request or
-// inventory page) and only subcategory needs filtering. One tap picks a
-// subcategory directly, rather than opening a dropdown to find it.
+// Filters a list of elements (identified by class name), as a row of
+// clickable "chip" buttons instead of a <select> dropdown - used on pages
+// where the category is already fixed by the page itself (e.g. a
+// per-category request or inventory page) and only subcategory needs
+// filtering. One tap picks a subcategory directly, rather than opening a
+// dropdown to find it.
 function initChipFilter(chipsContainerId, rowClassName, noMatchMessageId) {
   const container = document.getElementById(chipsContainerId);
   if (!container) return;
