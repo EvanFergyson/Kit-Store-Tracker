@@ -5,7 +5,7 @@
   <h1>{{ category.name }}</h1>
   {% include "_admin_nav.html" %}
 
-  <div style="margin-bottom:1rem;">
+  <div class="mb-lg">
     <a href="{{ url_for('add_item', category_id=category.id) }}" class="btn btn-primary">+ Add Kit Item</a>
   </div>
 

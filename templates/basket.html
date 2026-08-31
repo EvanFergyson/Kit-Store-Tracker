@@ -76,27 +76,3 @@
     <p class="empty-state">Your request list is empty. <a href="{{ url_for('request_kit') }}">Browse kit</a> to add items.</p>
   {% endif %}
 {% endblock %}
-
-{% block scripts %}
-<script>
-  // Each pickup/return session group has its own "Other" text box, hidden
-  // until the member actually picks "Other" - and only required at that point,
-  // so the browser's built-in validation doesn't block submission over a box
-  // that isn't even relevant to the option they chose.
-  document.addEventListener("DOMContentLoaded", () => {
-    document.querySelectorAll("[data-session-group]").forEach((group) => {
-      const name = group.dataset.sessionGroup;
-      const otherInput = document.querySelector(`[data-session-other="${name}"]`);
-      if (!otherInput) return;
-
-      group.querySelectorAll('input[type="radio"]').forEach((radio) => {
-        radio.addEventListener("change", () => {
-          const isOther = radio.value === "Other" && radio.checked;
-          otherInput.style.display = isOther ? "" : "none";
-          otherInput.required = isOther;
-        });
-      });
-    });
-  });
-</script>
-{% endblock %}

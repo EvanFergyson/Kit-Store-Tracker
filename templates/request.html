@@ -46,7 +46,7 @@
     <p class="empty-state">No kit has been added to the store yet.</p>
   {% endif %}
 
-  <section class="card" id="cant-find-it" style="margin-top:1.5rem;">
+  <section class="card mt-lg" id="cant-find-it">
     <h2>Can't find it?</h2>
     <form method="post" action="{{ url_for('add_to_basket') }}" class="inline-form js-basket-add">
       {{ csrf_field() }}

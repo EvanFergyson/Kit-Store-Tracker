@@ -2,6 +2,7 @@
 {% block title %}Sign In / Out{% endblock %}
 {% block content %}
   <h1>Sign Kit In / Out</h1>
+  {% include "_admin_nav.html" %}
 
   <datalist id="borrower-names">
     {% for name in borrower_names %}

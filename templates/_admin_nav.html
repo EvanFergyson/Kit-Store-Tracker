@@ -1,4 +1,5 @@
 <nav class="admin-subnav">
+  <a href="{{ url_for('sign_in_out') }}" class="admin-subnav-link{{ ' active' if active_tab == 'sign_in_out' else '' }}">Sign In/Out</a>
   <a href="{{ url_for('admin') }}" class="admin-subnav-link{{ ' active' if active_tab == 'pending' else '' }}">Pending Requests</a>
   <a href="{{ url_for('admin_inventory') }}" class="admin-subnav-link{{ ' active' if active_tab == 'inventory' else '' }}">Kit Inventory</a>
   <a href="{{ url_for('admin_groups') }}" class="admin-subnav-link{{ ' active' if active_tab == 'groups' else '' }}">Item Groups</a>

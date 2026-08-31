@@ -47,7 +47,7 @@
                 {% elif r.matching_item %}
                   <form method="post" action="{{ url_for('collect_request', request_id=r.id) }}">
                     {{ csrf_field() }}
-                    <button type="submit" class="btn btn-small btn-primary">Mark as Collected</button>
+                    <button type="submit" class="btn btn-small btn-primary">Collect</button>
                   </form>
                 {% else %}
                   <small class="empty-state">No matching item &mdash; sign out manually</small>

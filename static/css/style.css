@@ -13,6 +13,11 @@
   --color-text: #1f2622;
   --color-muted: #5d6a63;
   --color-success: #256b40;
+  /* Light tint pair for success/error backgrounds (flash messages, badges,
+     the row-just-saved highlight) - one definition each instead of the same
+     hex repeated at every call site. */
+  --color-success-bg: #e4f4e9;
+  --color-error-bg: #fdece3;
   /* Deliberately an orange-leaning red rather than the same hue as
      --color-primary: the brand red is used for every "go" action (Log In,
      Sign Out, Submit) and this is used for every "destroy" action (Delete,
@@ -190,6 +195,16 @@ form textarea {
 .inline-form > div,
 .inline-form label { grid-column: span 1; }
 
+/* Small set of spacing utilities for the handful of one-off wrapper divs
+   that just need extra margin and aren't worth a bespoke class - replaces
+   what used to be scattered bare style="margin-..." attributes (including
+   two near-identical "+ Add Kit Item" wrappers that had silently drifted to
+   different values, 1rem vs 1.5rem, on sibling pages). */
+.mt-sm { margin-top: 0.5rem; }
+.mt-md { margin-top: 0.75rem; }
+.mt-lg { margin-top: 1.5rem; }
+.mb-lg { margin-bottom: 1.5rem; }
+
 .btn {
   display: inline-block;
   padding: 0.55rem 1.1rem;
@@ -294,8 +309,8 @@ span.actions .inline-form { display: grid; }
   font-size: 0.92rem;
 }
 
-.flash-success { background: #e4f4e9; color: var(--color-success); border: 1px solid #b9e3c6; }
-.flash-error { background: #fdece3; color: var(--color-error-text); border: 1px solid #f4c9ab; }
+.flash-success { background: var(--color-success-bg); color: var(--color-success); border: 1px solid #b9e3c6; }
+.flash-error { background: var(--color-error-bg); color: var(--color-error-text); border: 1px solid #f4c9ab; }
 
 .badge {
   display: inline-block;
@@ -306,8 +321,8 @@ span.actions .inline-form { display: grid; }
   text-transform: capitalize;
 }
 
-.badge-approved { background: #e4f4e9; color: var(--color-success); }
-.badge-denied { background: #fdece3; color: var(--color-error-text); }
+.badge-approved { background: var(--color-success-bg); color: var(--color-success); }
+.badge-denied { background: var(--color-error-bg); color: var(--color-error-text); }
 .badge-collected { background: #e6edfb; color: var(--color-info); }
 .badge-archived { background: #eef0ee; color: var(--color-muted); }
 .badge-out { background: #fdf1de; color: #92600a; }
@@ -490,7 +505,7 @@ tbody tr:hover { background: var(--color-bg); }
    so the confirmation isn't only visible in the corner toast - you see the
    exact row you just changed acknowledge the save. */
 @keyframes row-saved-flash {
-  from { background-color: #e4f4e9; }
+  from { background-color: var(--color-success-bg); }
   to { background-color: transparent; }
 }
 

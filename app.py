@@ -784,6 +784,7 @@ def register_routes(app):
             active_sign_outs=active_sign_outs,
             sign_out_history=sign_out_history,
             borrower_names=borrower_names,
+            active_tab="sign_in_out",
         )
 
     @app.route("/sign-out", methods=["POST"])

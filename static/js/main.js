@@ -3,6 +3,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initAjaxBasketAdd();
   initAjaxBasketMutations();
   initQtySteppers();
+  initSessionOtherToggle();
 });
 
 // The app has two feedback systems: floating toasts (basket add/update/
@@ -280,4 +281,26 @@ function initTextFilter(inputId, rowClassName, noMatchMessageId) {
   }
 
   input.addEventListener("input", applyFilter);
+}
+
+// The checkout form's pickup/return session pickers each have their own
+// "Other" text box, hidden until the member actually picks "Other" - and
+// only required at that point, so the browser's built-in validation doesn't
+// block submission over a box that isn't even relevant to the option they
+// chose. Runs globally (guarded on finding no [data-session-group] elements)
+// rather than only on the basket page, matching every other init* function.
+function initSessionOtherToggle() {
+  document.querySelectorAll("[data-session-group]").forEach((group) => {
+    const name = group.dataset.sessionGroup;
+    const otherInput = document.querySelector(`[data-session-other="${name}"]`);
+    if (!otherInput) return;
+
+    group.querySelectorAll('input[type="radio"]').forEach((radio) => {
+      radio.addEventListener("change", () => {
+        const isOther = radio.value === "Other" && radio.checked;
+        otherInput.style.display = isOther ? "" : "none";
+        otherInput.required = isOther;
+      });
+    });
+  });
 }
