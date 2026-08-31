@@ -76,6 +76,7 @@ def create_app():
     app.jinja_env.globals["csrf_field"] = lambda: Markup(
         f'<input type="hidden" name="csrf_token" value="{generate_csrf()}">'
     )
+    app.jinja_env.filters["relative_time"] = _relative_time
 
     @app.before_request
     def _relax_secure_cookie_for_debug():
@@ -207,6 +208,24 @@ def parse_date(raw):
         return date.fromisoformat(raw)
     except ValueError:
         return None
+
+
+def _relative_time(dt):
+    """"3 days ago"-style rendering of a past datetime, for an at-a-glance
+    sense of how long something's been signed out - registered as the
+    `relative_time` Jinja filter in create_app(), alongside every other
+    template-facing helper. Shown next to (not instead of) the exact
+    timestamp everywhere it's used, so there's still something to cross-check
+    against."""
+    seconds = (datetime.utcnow() - dt).total_seconds()
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        return f"{int(seconds // 60)} min ago"
+    if seconds < 86400:
+        return f"{int(seconds // 3600)} hr ago"
+    days = int(seconds // 86400)
+    return f"{days} day{'s' if days != 1 else ''} ago"
 
 
 def parse_quantity(raw, default=1):

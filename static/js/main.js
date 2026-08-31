@@ -4,6 +4,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initAjaxBasketMutations();
   initQtySteppers();
   initSessionOtherToggle();
+  initGroupSplitTotals();
 });
 
 // The app has two feedback systems: floating toasts (basket add/update/
@@ -166,21 +167,68 @@ function initQtySteppers() {
     const up = stepper.querySelector(".qty-step-up");
     if (!input || !down || !up) return;
 
-    const clamp = (value) => {
-      const min = parseInt(input.min, 10) || 1;
-      if (Number.isNaN(value)) return min;
-      return Math.max(min, value);
+    // `|| 1` used to stand in for both "min wasn't set" and "min is 0" -
+    // indistinguishable in JS since 0 is falsy, so a min="0" stepper (the
+    // group-split rows on Sign In/Out, where 0 is a real, expected value
+    // meaning "skip this item") had its floor silently forced up to 1.
+    // Number.isNaN(...) only catches an actually-missing/invalid min.
+    const parsedMin = parseInt(input.min, 10);
+    const min = Number.isNaN(parsedMin) ? 1 : parsedMin;
+
+    // Same issue reading the *current* value: `parseInt(input.value) || 1`
+    // treated an explicit "0" the same as "nothing typed yet", so clicking
+    // up from 0 jumped straight to 2. Only fall back (to min, not a
+    // hardcoded 1) when the value truly isn't a number.
+    const currentValue = () => {
+      const parsed = parseInt(input.value, 10);
+      return Number.isNaN(parsed) ? min : parsed;
     };
+    const clamp = (value) => (Number.isNaN(value) ? min : Math.max(min, value));
 
     down.addEventListener("click", () => {
-      input.value = clamp((parseInt(input.value, 10) || 1) - 1);
+      input.value = clamp(currentValue() - 1);
     });
     up.addEventListener("click", () => {
-      input.value = clamp((parseInt(input.value, 10) || 1) + 1);
+      input.value = clamp(currentValue() + 1);
     });
     input.addEventListener("blur", () => {
       input.value = clamp(parseInt(input.value, 10));
     });
+  });
+}
+
+// Live running total for a group-split form (splitting a group request/
+// sign-out across several of its items - see .sign-out-group-form in
+// sign_in_out.html and admin_resolved.html, which share this exact markup).
+// Sums every quantity_<id> field as the committee member types, so they can
+// see whether their split is right before submitting instead of finding out
+// only after a round trip. Two shapes, depending on whether the form knows
+// what its split needs to add up to:
+//   - data-target-quantity set (collect_request's exact-sum case): shows
+//     "N of target" and colors it to flag match vs. mismatch.
+//   - not set (sign_out_group's freeform case, any nonzero total is fine):
+//     shows a plain "Total: N" with no color judgement.
+function initGroupSplitTotals() {
+  document.querySelectorAll(".sign-out-group-form").forEach((form) => {
+    const inputs = form.querySelectorAll('input[type="number"][name^="quantity_"]');
+    const totalEl = form.querySelector(".sign-out-group-total");
+    if (!inputs.length || !totalEl) return;
+
+    const target = form.dataset.targetQuantity ? parseInt(form.dataset.targetQuantity, 10) : null;
+
+    const update = () => {
+      const sum = Array.from(inputs).reduce((total, el) => total + (parseInt(el.value, 10) || 0), 0);
+      totalEl.classList.remove("total-match", "total-mismatch");
+      if (target === null) {
+        totalEl.textContent = `Total: ${sum}`;
+      } else {
+        totalEl.textContent = `${sum} of ${target}`;
+        totalEl.classList.add(sum === target ? "total-match" : "total-mismatch");
+      }
+    };
+
+    inputs.forEach((el) => el.addEventListener("input", update));
+    update();
   });
 }
 
