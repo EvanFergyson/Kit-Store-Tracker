@@ -175,6 +175,7 @@ def build_kit_entries(items, groups):
             "subcategory": group.subcategory,
             "quantity_available": group.quantity_available,
             "quantity_total": group.quantity_total,
+            "obj": group,
         }
         for group in groups
     ] + [
@@ -186,11 +187,56 @@ def build_kit_entries(items, groups):
             "subcategory": item.subcategory,
             "quantity_available": item.quantity_available,
             "quantity_total": item.quantity_total,
+            "obj": item,
         }
         for item in items
     ]
     entries.sort(key=lambda entry: entry["name"].lower())
     return entries
+
+
+# --------------------------------------------------------------- sign-outs
+# Shared by sign_out_item/sign_out_group (manual sign-out) and collect_request
+# (turning an approved request into a real sign-out) so the "decrement stock,
+# record a SignOut" step and the "split a group request across its items"
+# step each have exactly one implementation instead of being copy-pasted
+# across both flows.
+
+def _create_signout(item, quantity, borrower_name, notes, checked_out_by):
+    """Decrement one KitItem's available stock and record a SignOut for it.
+    Caller commits (and flushes first if it needs the new row's id before
+    commit, e.g. to link it back to an ItemRequest)."""
+    item.quantity_available -= quantity
+    signout = SignOut(
+        item_id=item.id,
+        borrower_name=borrower_name,
+        quantity=quantity,
+        notes=notes,
+        checked_out_by=checked_out_by,
+    )
+    db.session.add(signout)
+    return signout
+
+
+def _parse_group_split_quantities(candidates, form):
+    """Parse a `quantity_<item_id>` field per candidate KitItem (the members
+    of an ItemGroup) out of a submitted form, validating each one against its
+    own available stock as we go. Returns (splits, error_message): on success
+    `splits` is a list of (item, quantity) tuples for every candidate that had
+    a quantity entered and `error_message` is None; on the first invalid
+    field, `splits` is None and `error_message` is a ready-to-flash string."""
+    splits = []
+    for candidate in candidates:
+        raw = form.get(f"quantity_{candidate.id}", "").strip()
+        if not raw:
+            continue
+        quantity = parse_positive_int(raw)
+        if quantity is None:
+            return None, f"Quantity for '{candidate.name}' must be a whole number of at least 1."
+        if quantity > candidate.quantity_available:
+            return None, f"Only {candidate.quantity_available} of '{candidate.name}' available."
+        splits.append((candidate, quantity))
+    return splits, None
 
 
 # ------------------------------------------------------------------ basket
@@ -632,9 +678,14 @@ def register_routes(app):
     @app.route("/sign-in-out")
     @login_required
     def sign_in_out():
-        categories = Category.query.order_by(Category.name).all()
-        subcategories = Subcategory.query.order_by(Subcategory.name).all()
         items = KitItem.query.filter_by(active=True).order_by(KitItem.name).all()
+        # Deliberately not filtered to member_visible categories or to
+        # ungrouped-only items like the member-facing pages: the committee
+        # needs to sign out anything real (including "Cage" storage members
+        # never see), and needs the option to hand over one exact KitItem
+        # directly even when it's also part of a group.
+        groups = [group for group in ItemGroup.query.order_by(ItemGroup.name).all() if group.active_items]
+        kit_entries = build_kit_entries(items, groups)
         # Approved requests that haven't actually left the building yet - the
         # committee collects from here instead of re-typing an approved
         # request's borrower/item/quantity into the manual form below, and for
@@ -660,9 +711,7 @@ def register_routes(app):
         ]
         return render_template(
             "sign_in_out.html",
-            categories=categories,
-            subcategories=subcategories,
-            items=items,
+            kit_entries=kit_entries,
             ready_for_collection=ready_for_collection,
             active_sign_outs=active_sign_outs,
             sign_out_history=sign_out_history,
@@ -699,6 +748,41 @@ def register_routes(app):
             db.session.commit()
             flash(f"Signed out {quantity} x {item.name} to {borrower_name}.", "success")
 
+        return redirect(url_for("sign_in_out"))
+
+    @app.route("/sign-out/group", methods=["POST"])
+    @login_required
+    def sign_out_group():
+        """Sign out a group (e.g. 'Nuts') by splitting the amount needed
+        across as many of its specific items as it takes - unlike
+        sign_out_item, no single KitItem has to have enough stock on its own.
+        Creates one SignOut row per item actually used, all sharing the same
+        borrower/notes, so the sign-out history still shows exactly what
+        physically left the store."""
+        group = ItemGroup.query.get_or_404(request.form.get("group_id"))
+        borrower_name = request.form.get("borrower_name", "").strip()
+        notes = request.form.get("notes", "").strip()
+
+        if not borrower_name:
+            flash("Borrower name is required.", "error")
+            return redirect(url_for("sign_in_out"))
+
+        splits, error = _parse_group_split_quantities(group.active_items, request.form)
+        if error:
+            flash(error, "error")
+            return redirect(url_for("sign_in_out"))
+        if not splits:
+            flash(f"Enter a quantity for at least one item in '{group.name}'.", "error")
+            return redirect(url_for("sign_in_out"))
+
+        checked_out_by = session.get("committee_name", "Committee")
+        for item, quantity in splits:
+            _create_signout(item, quantity, borrower_name, notes, checked_out_by)
+        db.session.commit()
+
+        total = sum(quantity for _, quantity in splits)
+        summary = ", ".join(f"{quantity} x {item.name}" for item, quantity in splits)
+        flash(f"Signed out {total} x {group.name} to {borrower_name} ({summary}).", "success")
         return redirect(url_for("sign_in_out"))
 
     @app.route("/sign-in/<int:signout_id>", methods=["POST"])
@@ -1267,26 +1351,64 @@ def register_routes(app):
 
         if item_request.group_id:
             # A group request (e.g. "Nuts") doesn't name one specific KitItem,
-            # so the committee has to say which size/variant is actually
-            # being handed over - the form on the admin page supplies that as
-            # item_id, chosen from the group's own members only (never
-            # trust a stray item_id from outside the group).
-            item_id = request.form.get("item_id")
-            item = KitItem.query.get(item_id) if item_id else None
-            if not item or item.group_id != item_request.group_id:
+            # so the committee says which size(s) are actually being handed
+            # over - split across as many of the group's items as it takes to
+            # reach the requested quantity (quantity_<item_id> fields, same
+            # convention as sign_out_group), rather than requiring one single
+            # item to have the whole amount in stock on its own.
+            group = ItemGroup.query.get(item_request.group_id)
+            splits, error = _parse_group_split_quantities(
+                group.active_items if group else [], request.form
+            )
+            if error:
+                flash(error, "error")
+                return redirect(back_to)
+
+            total = sum(quantity for _, quantity in splits)
+            if not splits:
                 flash(
-                    f"Choose which specific item to hand over for '{item_request.item_name}'.",
+                    f"Choose which specific item(s) to hand over for '{item_request.item_name}'.",
                     "error",
                 )
                 return redirect(back_to)
-        else:
-            item = item_request.matching_item
-            if not item:
+            if total != item_request.quantity:
                 flash(
-                    f"No catalog item matches '{item_request.item_name}' — sign it out manually from Sign In/Out instead.",
+                    f"Chosen quantities add up to {total}, but {item_request.requester_name} asked for "
+                    f"{item_request.quantity} x {item_request.item_name} — adjust so they match exactly.",
                     "error",
                 )
                 return redirect(back_to)
+
+            checked_out_by = session.get("committee_name", "Committee")
+            first_signout_id = None
+            for candidate, quantity in splits:
+                signout = _create_signout(
+                    candidate, quantity, item_request.requester_name, item_request.message, checked_out_by
+                )
+                db.session.flush()  # populate signout.id before we link/reference it
+                if first_signout_id is None:
+                    first_signout_id = signout.id
+            # fulfilled_signout_id only holds a single FK, so a split collect
+            # links to the first SignOut row created - every row it produced
+            # is still there in Sign-Out History, this field is only used to
+            # tell "collected" apart from "not yet", not as a complete record.
+            item_request.fulfilled_signout_id = first_signout_id
+            db.session.commit()
+            summary = ", ".join(f"{quantity} x {candidate.name}" for candidate, quantity in splits)
+            flash(
+                f"Signed out {total} x {item_request.item_name} to {item_request.requester_name} "
+                f"({summary}) and marked the request as collected.",
+                "success",
+            )
+            return redirect(back_to)
+
+        item = item_request.matching_item
+        if not item:
+            flash(
+                f"No catalog item matches '{item_request.item_name}' — sign it out manually from Sign In/Out instead.",
+                "error",
+            )
+            return redirect(back_to)
 
         if item_request.quantity > item.quantity_available:
             flash(

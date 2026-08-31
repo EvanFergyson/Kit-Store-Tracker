@@ -75,13 +75,18 @@ body {
 
 .brand-logo { height: 36px; width: auto; flex-shrink: 0; }
 
+.site-header nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.1rem;
+}
+
 .site-header nav a {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
   color: #eef3ef;
   text-decoration: none;
-  margin-left: 1.1rem;
   font-size: 0.95rem;
 }
 
@@ -424,6 +429,49 @@ h3 { font-size: 1rem; margin: 0 0 0.5rem; }
 }
 .edit-bundle-details summary::-webkit-details-marker { display: none; }
 
+/* Sign In/Out: a group row's "Sign Out"/"Collect" button opens a small
+   dropdown-like panel (no JS needed, same <details> trick as the bundle edit
+   form above) with one quantity box per item in the group, so the committee
+   can split a request across several sizes instead of needing one item with
+   enough stock on its own. */
+.sign-out-group-details summary {
+  list-style: none;
+  cursor: pointer;
+}
+.sign-out-group-details summary::-webkit-details-marker { display: none; }
+
+.sign-out-group-form {
+  margin-top: 0.6rem;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  min-width: 240px;
+}
+
+.sign-out-group-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.35rem 0;
+}
+
+.sign-out-group-row input[type="number"] { width: 4.5rem; flex-shrink: 0; }
+
+/* The quick single-item Sign Out row on the merged Sign In/Out table -
+   borrower/quantity/notes all inline so signing something out is one row,
+   not a separate multi-field form below a category/subcategory picker. */
+.sign-out-item-form {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.sign-out-item-form input[type="text"] { width: auto; min-width: 8rem; }
+.sign-out-item-form input[type="number"] { width: 4rem; }
+
 /* Rows hidden by the category/subcategory filter JS must stay hidden even
    though the mobile rule below sets `tr { display: block }` (a same-priority
    author rule would otherwise beat the browser's default [hidden] style). */
@@ -587,7 +635,18 @@ tbody tr:hover { background: var(--color-bg); }
 
 @media (max-width: 600px) {
   .toast-container { left: 1rem; right: 1rem; max-width: none; }
-  .header-inner { flex-direction: column; gap: 0.5rem; align-items: flex-start; }
+  .header-inner { flex-direction: column; gap: 0.5rem; align-items: stretch; padding: 0.6rem 1rem; }
+  /* Text labels ("Request Kit", "CUMC Kit Store", etc.) are what actually
+     made the mobile header tall - 5 nav links each with an icon + word
+     wrapped across 2-3 full-width lines, stacked under the brand row and
+     search row. Icons alone (with aria-label/title still present for
+     screen readers) fit every link on one compact row instead. */
+  .brand { font-size: 0; gap: 0.4rem; }
+  .brand-logo { height: 28px; }
+  .site-header nav { gap: 0.9rem; }
+  .site-header nav a { font-size: 0; gap: 0; }
+  .nav-icon { width: 22px; height: 22px; }
+  #basket-count-badge { font-size: 0.7rem; }
   table, thead, tbody, th, td, tr { display: block; }
   thead { display: none; }
   td { border: none; padding: 0.25rem 0; }

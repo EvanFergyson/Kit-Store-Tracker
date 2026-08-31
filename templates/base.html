@@ -49,7 +49,7 @@
 
   <header class="site-header">
     <div class="container header-inner">
-      <a class="brand" href="{{ url_for('home') }}">
+      <a class="brand" href="{{ url_for('home') }}" aria-label="CUMC Kit Store home" title="CUMC Kit Store">
         <img src="{{ url_for('static', filename='img/logo.svg') }}" alt="" class="brand-logo">
         CUMC Kit Store
       </a>
@@ -58,14 +58,14 @@
         <svg class="nav-search-icon" aria-hidden="true"><use href="#icon-search"/></svg>
       </form>
       <nav>
-        <a href="{{ url_for('request_kit') }}"><svg class="nav-icon"><use href="#icon-kit"/></svg> Request Kit</a>
-        <a href="{{ url_for('view_basket') }}"><svg class="nav-icon"><use href="#icon-list"/></svg> Request List<span id="basket-count-badge"{% if not basket_count %} hidden{% endif %}> ({{ basket_count }})</span></a>
+        <a href="{{ url_for('request_kit') }}" aria-label="Request Kit" title="Request Kit"><svg class="nav-icon"><use href="#icon-kit"/></svg> Request Kit</a>
+        <a href="{{ url_for('view_basket') }}" aria-label="Request List{% if basket_count %} ({{ basket_count }} items){% endif %}" title="Request List"><svg class="nav-icon"><use href="#icon-list"/></svg> Request List<span id="basket-count-badge"{% if not basket_count %} hidden{% endif %}> ({{ basket_count }})</span></a>
         {% if session.get('is_committee') %}
-          <a href="{{ url_for('sign_in_out') }}"><svg class="nav-icon"><use href="#icon-swap"/></svg> Sign In/Out</a>
-          <a href="{{ url_for('admin') }}"><svg class="nav-icon"><use href="#icon-settings"/></svg> Admin</a>
-          <a href="{{ url_for('logout') }}"><svg class="nav-icon"><use href="#icon-logout"/></svg> Log Out</a>
+          <a href="{{ url_for('sign_in_out') }}" aria-label="Sign In/Out" title="Sign In/Out"><svg class="nav-icon"><use href="#icon-swap"/></svg> Sign In/Out</a>
+          <a href="{{ url_for('admin') }}" aria-label="Admin" title="Admin"><svg class="nav-icon"><use href="#icon-settings"/></svg> Admin</a>
+          <a href="{{ url_for('logout') }}" aria-label="Log Out" title="Log Out"><svg class="nav-icon"><use href="#icon-logout"/></svg> Log Out</a>
         {% else %}
-          <a href="{{ url_for('login') }}"><svg class="nav-icon"><use href="#icon-login"/></svg> Committee Login</a>
+          <a href="{{ url_for('login') }}" aria-label="Committee Login" title="Committee Login"><svg class="nav-icon"><use href="#icon-login"/></svg> Committee Login</a>
         {% endif %}
       </nav>
     </div>

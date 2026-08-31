@@ -3,6 +3,12 @@
 {% block content %}
   <h1>Sign Kit In / Out</h1>
 
+  <datalist id="borrower-names">
+    {% for name in borrower_names %}
+      <option value="{{ name }}">
+    {% endfor %}
+  </datalist>
+
   <section class="card">
     <h2>Ready for Collection</h2>
     <p class="empty-state">Approved requests waiting to be picked up &mdash; collecting one here signs it out automatically, no need to re-enter it below.</p>
@@ -21,17 +27,19 @@
                 {% set group = r.matching_group %}
                 {% set choices = group.active_items if group else [] %}
                 {% if choices %}
-                  <form method="post" action="{{ url_for('collect_request', request_id=r.id) }}" class="basket-add-form">
-                    <select name="item_id" required aria-label="Choose which item to hand over for {{ r.item_name }}">
-                      <option value="" disabled selected>Select item&hellip;</option>
+                  <details class="sign-out-group-details">
+                    <summary class="btn btn-small btn-primary">Collect ({{ r.quantity }} needed)</summary>
+                    <form method="post" action="{{ url_for('collect_request', request_id=r.id) }}" class="sign-out-group-form">
+                      <p class="empty-state">Split across as many as it takes to total {{ r.quantity }} exactly.</p>
                       {% for choice in choices %}
-                        <option value="{{ choice.id }}" {% if choice.quantity_available < r.quantity %}disabled{% endif %}>
-                          {{ choice.name }} ({{ choice.quantity_available }} available)
-                        </option>
+                        <div class="sign-out-group-row">
+                          <span>{{ choice.name }} <small>({{ choice.quantity_available }} available)</small></span>
+                          <input type="number" name="quantity_{{ choice.id }}" min="0" placeholder="0" inputmode="numeric" aria-label="Quantity of {{ choice.name }}">
+                        </div>
                       {% endfor %}
-                    </select>
-                    <button type="submit" class="btn btn-small btn-primary">Confirm &amp; Collect</button>
-                  </form>
+                      <button type="submit" class="btn btn-small btn-primary">Confirm &amp; Collect</button>
+                    </form>
+                  </details>
                 {% else %}
                   <small class="empty-state">No items left in this group &mdash; sign out manually</small>
                 {% endif %}
@@ -54,66 +62,63 @@
 
   <section class="card">
     <h2>Sign Out Manually</h2>
-    <p class="empty-state">For walk-ins or anything without a request on file.</p>
-    <form method="post" action="{{ url_for('sign_out_item') }}" class="inline-form">
-      <div>
-        <label for="filter-category">Category</label>
-        <select id="filter-category">
-          <option value="">All categories</option>
-          {% for cat in categories %}
-            <option value="{{ cat.id }}">{{ cat.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
+    <p class="empty-state">For walk-ins or anything without a request on file. Type to find an item or group, then sign out straight from its row.</p>
 
-      <div>
-        <label for="filter-subcategory">Subcategory</label>
-        <select id="filter-subcategory">
-          <option value="">All subcategories</option>
-          {% for sub in subcategories %}
-            <option value="{{ sub.id }}" data-category-id="{{ sub.category_id }}">{{ sub.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
+    <label for="sign-out-search">Search</label>
+    <input type="search" id="sign-out-search" placeholder="e.g. helmet, nuts, tent&hellip;">
 
-      <div>
-        <label for="item_id">Item</label>
-        <select id="item_id" name="item_id" required>
-          <option value="" disabled selected data-subcategory-id="">Select an item&hellip;</option>
-          {% for item in items %}
-            <option value="{{ item.id }}" data-subcategory-id="{{ item.subcategory_id }}" {% if item.quantity_available < 1 %}disabled{% endif %}>
-              {{ item.name }} ({{ item.quantity_available }} of {{ item.quantity_total }} available)
-            </option>
-          {% endfor %}
-        </select>
+    {% if kit_entries %}
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Item</th><th>Category</th><th>Available</th><th></th></tr></thead>
+          <tbody>
+            {% for entry in kit_entries %}
+            <tr class="kit-row" data-search="{{ (entry.name ~ ' ' ~ entry.category.name ~ ' ' ~ entry.subcategory.name)|lower }}">
+              <td>
+                {{ entry.name }}
+                {% if entry.kind == "group" %}<span class="badge badge-group">Multiple options</span>{% endif %}
+              </td>
+              <td>{{ entry.category.name }} &rsaquo; {{ entry.subcategory.name }}</td>
+              <td>{{ entry.quantity_available }} of {{ entry.quantity_total }}</td>
+              <td>
+                {% if entry.kind == "group" %}
+                  <details class="sign-out-group-details">
+                    <summary class="btn btn-small btn-primary">Sign Out</summary>
+                    <form method="post" action="{{ url_for('sign_out_group') }}" class="sign-out-group-form">
+                      <input type="hidden" name="group_id" value="{{ entry.id }}">
+                      <label for="group-{{ entry.id }}-borrower">Borrower name</label>
+                      <input type="text" id="group-{{ entry.id }}-borrower" name="borrower_name" list="borrower-names" required autocomplete="off">
+                      <p class="empty-state">Split across as many of these as it takes.</p>
+                      {% for item in entry.obj.active_items %}
+                        <div class="sign-out-group-row">
+                          <span>{{ item.name }} <small>({{ item.quantity_available }} available)</small></span>
+                          <input type="number" name="quantity_{{ item.id }}" min="0" placeholder="0" inputmode="numeric" aria-label="Quantity of {{ item.name }}" {% if item.quantity_available < 1 %}disabled{% endif %}>
+                        </div>
+                      {% endfor %}
+                      <label for="group-{{ entry.id }}-notes">Notes</label>
+                      <input type="text" id="group-{{ entry.id }}-notes" name="notes">
+                      <button type="submit" class="btn btn-small btn-primary">Confirm Sign Out</button>
+                    </form>
+                  </details>
+                {% else %}
+                  <form method="post" action="{{ url_for('sign_out_item') }}" class="sign-out-item-form">
+                    <input type="hidden" name="item_id" value="{{ entry.id }}">
+                    <input type="text" name="borrower_name" list="borrower-names" required autocomplete="off" placeholder="Borrower name" aria-label="Borrower name">
+                    <input type="number" name="quantity" min="1" value="1" inputmode="numeric" aria-label="Quantity of {{ entry.name }}">
+                    <input type="text" name="notes" placeholder="Notes (optional)" aria-label="Notes">
+                    <button type="submit" class="btn btn-small btn-primary" {% if entry.quantity_available < 1 %}disabled{% endif %}>Sign Out</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
-
-      <div>
-        <label for="borrower_name">Borrower name</label>
-        <input type="text" id="borrower_name" name="borrower_name" list="borrower-names" required autocomplete="off">
-        <datalist id="borrower-names">
-          {% for name in borrower_names %}
-            <option value="{{ name }}">
-          {% endfor %}
-        </datalist>
-      </div>
-
-      <div>
-        <label for="quantity">Quantity</label>
-        <div class="qty-stepper">
-          <button type="button" class="qty-step qty-step-down" aria-label="Decrease quantity">&minus;</button>
-          <input type="number" id="quantity" name="quantity" min="1" value="1" inputmode="numeric">
-          <button type="button" class="qty-step qty-step-up" aria-label="Increase quantity">+</button>
-        </div>
-      </div>
-
-      <div>
-        <label for="notes">Notes</label>
-        <input type="text" id="notes" name="notes">
-      </div>
-
-      <button type="submit" class="btn btn-primary">Sign Out</button>
-    </form>
+      <p id="no-search-match" class="empty-state" hidden>No kit matches that search.</p>
+    {% else %}
+      <p class="empty-state">No kit has been added to the store yet.</p>
+    {% endif %}
   </section>
 
   <section class="card">
@@ -185,7 +190,7 @@
 {% block scripts %}
 <script>
   document.addEventListener("DOMContentLoaded", () => {
-    initCascade("filter-category", "filter-subcategory", "item_id");
+    initTextFilter("sign-out-search", "kit-row", "no-search-match");
   });
 </script>
 {% endblock %}

@@ -27,17 +27,19 @@
                   {% set group = r.matching_group %}
                   {% set choices = group.active_items if group else [] %}
                   {% if choices %}
-                    <form method="post" action="{{ url_for('collect_request', request_id=r.id) }}" class="basket-add-form">
-                      <select name="item_id" required aria-label="Choose which item to hand over for {{ r.item_name }}">
-                        <option value="" disabled selected>Select item&hellip;</option>
+                    <details class="sign-out-group-details">
+                      <summary class="btn btn-small btn-primary">Collect ({{ r.quantity }} needed)</summary>
+                      <form method="post" action="{{ url_for('collect_request', request_id=r.id) }}" class="sign-out-group-form">
+                        <p class="empty-state">Split across as many as it takes to total {{ r.quantity }} exactly.</p>
                         {% for choice in choices %}
-                          <option value="{{ choice.id }}" {% if choice.quantity_available < r.quantity %}disabled{% endif %}>
-                            {{ choice.name }} ({{ choice.quantity_available }} available)
-                          </option>
+                          <div class="sign-out-group-row">
+                            <span>{{ choice.name }} <small>({{ choice.quantity_available }} available)</small></span>
+                            <input type="number" name="quantity_{{ choice.id }}" min="0" placeholder="0" inputmode="numeric" aria-label="Quantity of {{ choice.name }}">
+                          </div>
                         {% endfor %}
-                      </select>
-                      <button type="submit" class="btn btn-small btn-primary">Confirm &amp; Collect</button>
-                    </form>
+                        <button type="submit" class="btn btn-small btn-primary">Confirm &amp; Collect</button>
+                      </form>
+                    </details>
                   {% else %}
                     <small class="empty-state">No items left in this group &mdash; sign out manually</small>
                   {% endif %}
