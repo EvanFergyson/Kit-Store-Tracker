@@ -282,6 +282,23 @@ def _create_signout(item, quantity, borrower_name, notes, checked_out_by):
     return signout
 
 
+def _name_exists(model, name, exclude_id=None, **scope_filters):
+    """Case-insensitive "does a row with this name already exist" check,
+    shared by every add/edit route for Category/Subcategory/KitItem/
+    ItemGroup/KitBundle (each of which has its own uniqueness rule, but the
+    same func.lower(...) == name.lower() comparison). `exclude_id` excludes
+    the row being edited, so renaming something to its own current name
+    doesn't flag itself as a clash. `scope_filters` adds extra equality
+    filters (e.g. category_id=category.id for Subcategory) for names that
+    only need to be unique within a parent, not globally."""
+    query = model.query.filter(func.lower(model.name) == name.lower())
+    for column, value in scope_filters.items():
+        query = query.filter(getattr(model, column) == value)
+    if exclude_id is not None:
+        query = query.filter(model.id != exclude_id)
+    return db.session.query(query.exists()).scalar()
+
+
 def _parse_group_split_quantities(candidates, form):
     """Parse a `quantity_<item_id>` field per candidate KitItem (the members
     of an ItemGroup) out of a submitted form, validating each one against its
@@ -805,15 +822,13 @@ def register_routes(app):
         elif quantity > item.quantity_available:
             flash(f"Only {item.quantity_available} of '{item.name}' available.", "error")
         else:
-            item.quantity_available -= quantity
-            signout = SignOut(
-                item_id=item.id,
-                borrower_name=borrower_name,
-                quantity=quantity,
-                notes=request.form.get("notes", "").strip(),
-                checked_out_by=session.get("committee_name", "Committee"),
+            _create_signout(
+                item,
+                quantity,
+                borrower_name,
+                request.form.get("notes", "").strip(),
+                session.get("committee_name", "Committee"),
             )
-            db.session.add(signout)
             db.session.commit()
             flash(f"Signed out {quantity} x {item.name} to {borrower_name}.", "success")
 
@@ -914,7 +929,7 @@ def register_routes(app):
         name = request.form.get("name", "").strip()
         if not name:
             flash("Category name is required.", "error")
-        elif Category.query.filter(func.lower(Category.name) == name.lower()).first():
+        elif _name_exists(Category, name):
             flash(f"Category '{name}' already exists.", "error")
         else:
             db.session.add(Category(name=name))
@@ -953,9 +968,7 @@ def register_routes(app):
 
         if not name or not category:
             flash("Subcategory name and category are required.", "error")
-        elif Subcategory.query.filter(
-            func.lower(Subcategory.name) == name.lower(), Subcategory.category_id == category.id
-        ).first():
+        elif _name_exists(Subcategory, name, category_id=category.id):
             flash(f"'{name}' already exists under '{category.name}'.", "error")
         else:
             db.session.add(Subcategory(name=name, category_id=category.id))
@@ -1036,7 +1049,7 @@ def register_routes(app):
             if quantity_total is None:
                 flash("Quantity must be a whole number of at least 1.", "error")
                 return redirect(error_redirect)
-            if KitItem.query.filter(func.lower(KitItem.name) == name.lower()).first():
+            if _name_exists(KitItem, name):
                 flash(
                     f"An item named '{name}' already exists — choose a different name, "
                     "or edit the existing one instead of adding a duplicate.",
@@ -1098,10 +1111,7 @@ def register_routes(app):
                 return redirect(url_for("edit_item", item_id=item.id))
 
             if new_name and new_name.lower() != item.name.lower():
-                clash = KitItem.query.filter(
-                    func.lower(KitItem.name) == new_name.lower(), KitItem.id != item.id
-                ).first()
-                if clash:
+                if _name_exists(KitItem, new_name, exclude_id=item.id):
                     flash(f"An item named '{new_name}' already exists.", "error")
                     return redirect(url_for("edit_item", item_id=item.id))
 
@@ -1197,7 +1207,7 @@ def register_routes(app):
             flash("Group name is required.", "error")
         elif not subcategory_id:
             flash("Please choose a subcategory for the group.", "error")
-        elif ItemGroup.query.filter(func.lower(ItemGroup.name) == name.lower()).first():
+        elif _name_exists(ItemGroup, name):
             flash(f"A group named '{name}' already exists.", "error")
         else:
             db.session.add(ItemGroup(name=name, subcategory_id=subcategory_id, description=description))
@@ -1256,7 +1266,7 @@ def register_routes(app):
 
         if not name:
             flash("Bundle name is required.", "error")
-        elif KitBundle.query.filter(func.lower(KitBundle.name) == name.lower()).first():
+        elif _name_exists(KitBundle, name):
             flash(f"A bundle named '{name}' already exists.", "error")
         else:
             db.session.add(KitBundle(name=name, description=description))
@@ -1273,9 +1283,7 @@ def register_routes(app):
 
         if not name:
             flash("Bundle name is required.", "error")
-        elif KitBundle.query.filter(
-            func.lower(KitBundle.name) == name.lower(), KitBundle.id != bundle.id
-        ).first():
+        elif _name_exists(KitBundle, name, exclude_id=bundle.id):
             flash(f"A bundle named '{name}' already exists.", "error")
         else:
             bundle.name = name
@@ -1486,15 +1494,13 @@ def register_routes(app):
             )
             return redirect(back_to)
 
-        item.quantity_available -= item_request.quantity
-        signout = SignOut(
-            item_id=item.id,
-            borrower_name=item_request.requester_name,
-            quantity=item_request.quantity,
-            notes=item_request.message,
-            checked_out_by=session.get("committee_name", "Committee"),
+        signout = _create_signout(
+            item,
+            item_request.quantity,
+            item_request.requester_name,
+            item_request.message,
+            session.get("committee_name", "Committee"),
         )
-        db.session.add(signout)
         db.session.flush()  # populate signout.id before we link it below
         item_request.fulfilled_signout_id = signout.id
         db.session.commit()
