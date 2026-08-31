@@ -9,6 +9,7 @@ from flask import Flask, abort, flash, redirect, render_template, request, send_
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 from markupsafe import Markup
 from sqlalchemy import func, inspect, or_, text
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.schema import CreateColumn
 
 from config import Config
@@ -164,6 +165,28 @@ def _ensure_schema():
             with db.engine.begin() as conn:
                 conn.execute(text(f"ALTER TABLE item_requests ADD COLUMN {column_ddl}"))
 
+    # Case-insensitive uniqueness backstop matching the app-level
+    # _name_exists() checks - those do a SELECT then a separate INSERT/
+    # UPDATE, so two near-simultaneous submissions could both pass the check
+    # and create case-variant duplicates ("Rope" / "rope") without a
+    # DB-level constraint behind them. IntegrityError from these is caught
+    # by the SQLAlchemyError handler below and turned into a flash message.
+    # Plain "IF NOT EXISTS" (rather than the existing_columns-style inspector
+    # check used above) because SQLite/Postgres can't reflect an expression
+    # index back through inspector.get_indexes() the way a plain column
+    # index would, so there's nothing reliable to check first - these
+    # statements are just safe to re-run unconditionally every boot.
+    unique_ci_indexes = [
+        ("uq_categories_name_ci", "categories", "lower(name)"),
+        ("uq_kit_items_name_ci", "kit_items", "lower(name)"),
+        ("uq_item_groups_name_ci", "item_groups", "lower(name)"),
+        ("uq_kit_bundles_name_ci", "kit_bundles", "lower(name)"),
+        ("uq_subcategories_name_category_ci", "subcategories", "lower(name), category_id"),
+    ]
+    with db.engine.begin() as conn:
+        for index_name, table_name, expression in unique_ci_indexes:
+            conn.execute(text(f"CREATE UNIQUE INDEX IF NOT EXISTS {index_name} ON {table_name} ({expression})"))
+
 
 def login_required(view_func):
     @wraps(view_func)
@@ -266,11 +289,47 @@ def build_kit_entries(items, groups):
 # step each have exactly one implementation instead of being copy-pasted
 # across both flows.
 
+class InsufficientStockError(Exception):
+    """Raised by _create_signout when the atomic stock check fails - i.e. a
+    concurrent sign-out already used up the remaining stock between this
+    route's own "is there enough?" pre-check and this call actually running.
+    Callers catch this and flash item.name/item.quantity_available - the
+    latter is refreshed from the database before raising (see below), so it
+    reflects however much is actually left right now, not whatever stale
+    figure the route's own pre-check happened to read earlier."""
+
+    def __init__(self, item):
+        self.item = item
+        super().__init__(f"Not enough '{item.name}' available.")
+
+
 def _create_signout(item, quantity, borrower_name, notes, checked_out_by):
     """Decrement one KitItem's available stock and record a SignOut for it.
     Caller commits (and flushes first if it needs the new row's id before
-    commit, e.g. to link it back to an ItemRequest)."""
-    item.quantity_available -= quantity
+    commit, e.g. to link it back to an ItemRequest).
+
+    Every route already does its own "is there enough?" check before calling
+    this, using whatever quantity_available it last read - but that read and
+    this write aren't atomic, so two committee members racing to sign out
+    the last unit could both pass that check. The UPDATE below re-checks
+    quantity_available >= quantity as part of the same statement that
+    decrements it, so only one of two racing requests can actually succeed;
+    the other gets rowcount 0 and InsufficientStockError instead of silently
+    driving stock negative. Uses Core's update() (not the ORM attribute
+    assignment this replaced) specifically so the WHERE clause and the
+    decrement happen as one atomic statement at the database - item's
+    in-memory quantity_available is intentionally left stale on success
+    (expired below) since no caller reads it again after this returns."""
+    result = db.session.execute(
+        KitItem.__table__.update()
+        .where(KitItem.id == item.id, KitItem.quantity_available >= quantity)
+        .values(quantity_available=KitItem.quantity_available - quantity)
+    )
+    if result.rowcount == 0:
+        db.session.refresh(item, ["quantity_available"])
+        raise InsufficientStockError(item)
+    db.session.expire(item, ["quantity_available"])
+
     signout = SignOut(
         item_id=item.id,
         borrower_name=borrower_name,
@@ -398,6 +457,33 @@ def register_routes(app):
     @app.context_processor
     def inject_basket_count():
         return {"basket_count": basket_line_count(get_basket())}
+
+    # No route had ever wrapped a db.session.commit() in a try/except, so any
+    # database error (a constraint the app-level checks missed, a dropped
+    # connection, disk full, ...) surfaced as a raw unhandled 500 with no
+    # rollback - leaving the session's failed transaction stuck for whatever
+    # request came next. These two handlers catch anything SQLAlchemy raises
+    # anywhere in a view, roll the session back, and send the committee
+    # member back to what they were doing with an explanation instead.
+    # IntegrityError (registered first/more specific) covers exactly the
+    # uniqueness-race case the new DB-level indexes above exist to catch;
+    # everything else falls through to the general SQLAlchemyError handler.
+    @app.errorhandler(IntegrityError)
+    def handle_integrity_error(error):
+        db.session.rollback()
+        flash(
+            "That couldn't be saved because it clashes with something else — "
+            "possibly created by someone else at the same moment. Check the "
+            "list and try again.",
+            "error",
+        )
+        return redirect(request.referrer or url_for("home"))
+
+    @app.errorhandler(SQLAlchemyError)
+    def handle_db_error(error):
+        db.session.rollback()
+        flash("Something went wrong saving that — please try again.", "error")
+        return redirect(request.referrer or url_for("home"))
 
     # ---------------------------------------------------------------- public
     @app.route("/")
@@ -822,15 +908,19 @@ def register_routes(app):
         elif quantity > item.quantity_available:
             flash(f"Only {item.quantity_available} of '{item.name}' available.", "error")
         else:
-            _create_signout(
-                item,
-                quantity,
-                borrower_name,
-                request.form.get("notes", "").strip(),
-                session.get("committee_name", "Committee"),
-            )
-            db.session.commit()
-            flash(f"Signed out {quantity} x {item.name} to {borrower_name}.", "success")
+            try:
+                _create_signout(
+                    item,
+                    quantity,
+                    borrower_name,
+                    request.form.get("notes", "").strip(),
+                    session.get("committee_name", "Committee"),
+                )
+                db.session.commit()
+                flash(f"Signed out {quantity} x {item.name} to {borrower_name}.", "success")
+            except InsufficientStockError as e:
+                db.session.rollback()
+                flash(f"Only {e.item.quantity_available} of '{e.item.name}' available.", "error")
 
         return redirect(url_for("sign_in_out"))
 
@@ -860,9 +950,22 @@ def register_routes(app):
             return redirect(url_for("sign_in_out"))
 
         checked_out_by = session.get("committee_name", "Committee")
-        for item, quantity in splits:
-            _create_signout(item, quantity, borrower_name, notes, checked_out_by)
-        db.session.commit()
+        try:
+            for item, quantity in splits:
+                _create_signout(item, quantity, borrower_name, notes, checked_out_by)
+            db.session.commit()
+        except InsufficientStockError as e:
+            # None of this split's SignOuts have committed yet, so rolling
+            # back here discards all of them, not just the one that hit the
+            # race - the committee member sees one clear error and re-enters
+            # the whole split rather than ending up with half of it applied.
+            db.session.rollback()
+            flash(
+                f"Only {e.item.quantity_available} of '{e.item.name}' available now — "
+                "someone else may have just signed it out. Adjust and try again.",
+                "error",
+            )
+            return redirect(url_for("sign_in_out"))
 
         total = sum(quantity for _, quantity in splits)
         summary = ", ".join(f"{quantity} x {item.name}" for item, quantity in splits)
@@ -1457,19 +1560,29 @@ def register_routes(app):
 
             checked_out_by = session.get("committee_name", "Committee")
             first_signout_id = None
-            for candidate, quantity in splits:
-                signout = _create_signout(
-                    candidate, quantity, item_request.requester_name, item_request.message, checked_out_by
+            try:
+                for candidate, quantity in splits:
+                    signout = _create_signout(
+                        candidate, quantity, item_request.requester_name, item_request.message, checked_out_by
+                    )
+                    db.session.flush()  # populate signout.id before we link/reference it
+                    if first_signout_id is None:
+                        first_signout_id = signout.id
+                # fulfilled_signout_id only holds a single FK, so a split
+                # collect links to the first SignOut row created - every row
+                # it produced is still there in Sign-Out History, this field
+                # is only used to tell "collected" apart from "not yet", not
+                # as a complete record.
+                item_request.fulfilled_signout_id = first_signout_id
+                db.session.commit()
+            except InsufficientStockError as e:
+                db.session.rollback()
+                flash(
+                    f"Only {e.item.quantity_available} of '{e.item.name}' available now — "
+                    "someone else may have just signed it out. Adjust and try again.",
+                    "error",
                 )
-                db.session.flush()  # populate signout.id before we link/reference it
-                if first_signout_id is None:
-                    first_signout_id = signout.id
-            # fulfilled_signout_id only holds a single FK, so a split collect
-            # links to the first SignOut row created - every row it produced
-            # is still there in Sign-Out History, this field is only used to
-            # tell "collected" apart from "not yet", not as a complete record.
-            item_request.fulfilled_signout_id = first_signout_id
-            db.session.commit()
+                return redirect(back_to)
             summary = ", ".join(f"{quantity} x {candidate.name}" for candidate, quantity in splits)
             flash(
                 f"Signed out {total} x {item_request.item_name} to {item_request.requester_name} "
@@ -1494,16 +1607,25 @@ def register_routes(app):
             )
             return redirect(back_to)
 
-        signout = _create_signout(
-            item,
-            item_request.quantity,
-            item_request.requester_name,
-            item_request.message,
-            session.get("committee_name", "Committee"),
-        )
-        db.session.flush()  # populate signout.id before we link it below
-        item_request.fulfilled_signout_id = signout.id
-        db.session.commit()
+        try:
+            signout = _create_signout(
+                item,
+                item_request.quantity,
+                item_request.requester_name,
+                item_request.message,
+                session.get("committee_name", "Committee"),
+            )
+            db.session.flush()  # populate signout.id before we link it below
+            item_request.fulfilled_signout_id = signout.id
+            db.session.commit()
+        except InsufficientStockError as e:
+            db.session.rollback()
+            flash(
+                f"Only {e.item.quantity_available} of '{e.item.name}' available right now — "
+                "adjust the loan or sign it out manually.",
+                "error",
+            )
+            return redirect(back_to)
         flash(
             f"Signed out {item_request.quantity} x {item.name} to {item_request.requester_name} "
             "and marked the request as collected.",
