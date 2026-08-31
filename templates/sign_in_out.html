@@ -30,6 +30,7 @@
                   <details class="sign-out-group-details">
                     <summary class="btn btn-small btn-primary">Collect ({{ r.quantity }} needed)</summary>
                     <form method="post" action="{{ url_for('collect_request', request_id=r.id) }}" class="sign-out-group-form">
+                      {{ csrf_field() }}
                       <p class="empty-state">Split across as many as it takes to total {{ r.quantity }} exactly.</p>
                       {% for choice in choices %}
                         <div class="sign-out-group-row">
@@ -45,6 +46,7 @@
                 {% endif %}
               {% elif r.matching_item %}
                 <form method="post" action="{{ url_for('collect_request', request_id=r.id) }}">
+                  {{ csrf_field() }}
                   <button type="submit" class="btn btn-small btn-primary">Collect</button>
                 </form>
               {% else %}
@@ -85,6 +87,7 @@
                   <details class="sign-out-group-details">
                     <summary class="btn btn-small btn-primary">Sign Out</summary>
                     <form method="post" action="{{ url_for('sign_out_group') }}" class="sign-out-group-form">
+                      {{ csrf_field() }}
                       <input type="hidden" name="group_id" value="{{ entry.id }}">
                       <label for="group-{{ entry.id }}-borrower">Borrower name</label>
                       <input type="text" id="group-{{ entry.id }}-borrower" name="borrower_name" list="borrower-names" required autocomplete="off">
@@ -102,6 +105,7 @@
                   </details>
                 {% else %}
                   <form method="post" action="{{ url_for('sign_out_item') }}" class="sign-out-item-form">
+                    {{ csrf_field() }}
                     <input type="hidden" name="item_id" value="{{ entry.id }}">
                     <input type="text" name="borrower_name" list="borrower-names" required autocomplete="off" placeholder="Borrower name" aria-label="Borrower name">
                     <input type="number" name="quantity" min="1" value="1" inputmode="numeric" aria-label="Quantity of {{ entry.name }}">
@@ -140,6 +144,7 @@
             <td>{{ so.notes or '' }}</td>
             <td>
               <form method="post" action="{{ url_for('sign_in_item', signout_id=so.id) }}">
+                {{ csrf_field() }}
                 <button type="submit" class="btn btn-small btn-primary">Sign In</button>
               </form>
             </td>

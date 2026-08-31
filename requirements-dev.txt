@@ -1,0 +1,4 @@
+# Extra dependencies for running the test suite locally / in CI.
+# Install with: pip install -r requirements.txt -r requirements-dev.txt
+-r requirements.txt
+pytest==9.1.1

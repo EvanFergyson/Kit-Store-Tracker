@@ -35,6 +35,7 @@
             <td>{{ entry.quantity_available }} of {{ entry.quantity_total }}</td>
             <td>
               <form method="post" action="{{ url_for('add_to_basket') }}" class="basket-add-form js-basket-add">
+                {{ csrf_field() }}
                 {% if entry.kind == "group" %}
                   <input type="hidden" name="group_id" value="{{ entry.id }}">
                 {% else %}

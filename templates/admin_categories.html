@@ -19,11 +19,13 @@
                 </span>
                 <span class="actions">
                   <form method="post" action="{{ url_for('toggle_category_visibility', category_id=cat.id) }}">
+                    {{ csrf_field() }}
                     <button type="submit" class="btn btn-small btn-secondary">
                       {{ "Show to members" if not cat.member_visible else "Hide from members" }}
                     </button>
                   </form>
                   <form method="post" action="{{ url_for('delete_category', category_id=cat.id) }}" onsubmit="return confirm('Delete category {{ cat.name }}?');">
+                    {{ csrf_field() }}
                     <button type="submit" class="btn btn-small btn-danger">Delete</button>
                   </form>
                 </span>
@@ -34,6 +36,7 @@
           <p class="empty-state">No categories yet.</p>
         {% endif %}
         <form method="post" action="{{ url_for('add_category') }}" class="inline-form">
+          {{ csrf_field() }}
           <label for="new_category_name">New category</label>
           <input type="text" id="new_category_name" name="name" placeholder="e.g. Hardware">
           <button type="submit" class="btn btn-small btn-primary">Add</button>
@@ -48,6 +51,7 @@
               <li>
                 {{ sub.name }} <small>({{ sub.category.name }})</small>
                 <form method="post" action="{{ url_for('delete_subcategory', subcategory_id=sub.id) }}" onsubmit="return confirm('Delete subcategory {{ sub.name }}?');">
+                  {{ csrf_field() }}
                   <button type="submit" class="btn btn-small btn-danger">Delete</button>
                 </form>
               </li>
@@ -58,6 +62,7 @@
         {% endif %}
         {% if categories %}
           <form method="post" action="{{ url_for('add_subcategory') }}" class="inline-form">
+            {{ csrf_field() }}
             <label for="new_subcategory_name">New subcategory</label>
             <input type="text" id="new_subcategory_name" name="name" placeholder="e.g. Single Rope">
             <label for="new_subcategory_category">Under category</label>

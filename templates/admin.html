@@ -18,9 +18,11 @@
             {% if group.request_group and group.lines|length > 1 %}
               <div class="actions">
                 <form method="post" action="{{ url_for('resolve_request_group', request_group=group.request_group, action='approve') }}">
+                  {{ csrf_field() }}
                   <button type="submit" class="btn btn-small btn-success">Approve All</button>
                 </form>
                 <form method="post" action="{{ url_for('resolve_request_group', request_group=group.request_group, action='deny') }}">
+                  {{ csrf_field() }}
                   <button type="submit" class="btn btn-small btn-danger">Deny All</button>
                 </form>
               </div>
@@ -39,9 +41,11 @@
                 <td>{{ r.quantity }}</td>
                 <td class="actions">
                   <form method="post" action="{{ url_for('resolve_request', request_id=r.id, action='approve') }}">
+                    {{ csrf_field() }}
                     <button type="submit" class="btn btn-small btn-success">Approve</button>
                   </form>
                   <form method="post" action="{{ url_for('resolve_request', request_id=r.id, action='deny') }}">
+                    {{ csrf_field() }}
                     <button type="submit" class="btn btn-small btn-danger">Deny</button>
                   </form>
                 </td>

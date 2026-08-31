@@ -21,6 +21,7 @@
               </small>
             </div>
             <form method="post" action="{{ url_for('add_bundle_to_basket', bundle_id=bundle.id) }}" class="js-basket-add">
+              {{ csrf_field() }}
               <button type="submit" class="btn btn-small btn-primary">Add Bundle to List</button>
             </form>
           </div>
@@ -48,6 +49,7 @@
   <section class="card" id="cant-find-it" style="margin-top:1.5rem;">
     <h2>Can't find it?</h2>
     <form method="post" action="{{ url_for('add_to_basket') }}" class="inline-form js-basket-add">
+      {{ csrf_field() }}
       <label for="custom_name">Item description</label>
       <input type="text" id="custom_name" name="custom_name" placeholder="e.g. Bike lock">
 

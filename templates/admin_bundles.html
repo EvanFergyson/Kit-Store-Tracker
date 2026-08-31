@@ -19,6 +19,7 @@
               <details class="edit-bundle-details">
                 <summary class="btn btn-small btn-secondary">Edit</summary>
                 <form method="post" action="{{ url_for('edit_bundle', bundle_id=bundle.id) }}" class="inline-form" style="margin-top:0.5rem;">
+                  {{ csrf_field() }}
                   <div>
                     <label for="bundle-{{ bundle.id }}-name">Name</label>
                     <input type="text" id="bundle-{{ bundle.id }}-name" name="name" value="{{ bundle.name }}">
@@ -31,6 +32,7 @@
                 </form>
               </details>
               <form method="post" action="{{ url_for('delete_bundle', bundle_id=bundle.id) }}" onsubmit="return confirm('Delete bundle {{ bundle.name }}? This won\'t delete the items themselves.');">
+                {{ csrf_field() }}
                 <button type="submit" class="btn btn-small btn-danger">Delete Bundle</button>
               </form>
             </span>
@@ -50,6 +52,7 @@
                   <td>{{ line.quantity }}</td>
                   <td class="actions">
                     <form method="post" action="{{ url_for('delete_bundle_line', bundle_id=bundle.id, line_id=line.id) }}">
+                      {{ csrf_field() }}
                       <button type="submit" class="btn btn-small btn-danger">Remove</button>
                     </form>
                   </td>
@@ -62,6 +65,7 @@
           {% endif %}
 
           <form method="post" action="{{ url_for('add_bundle_line', bundle_id=bundle.id) }}" class="inline-form" style="margin-top:0.75rem;">
+            {{ csrf_field() }}
             <div>
               <label for="bundle-{{ bundle.id }}-filter-category">Category</label>
               <select id="bundle-{{ bundle.id }}-filter-category">
@@ -105,6 +109,7 @@
     {% endif %}
 
     <form method="post" action="{{ url_for('add_bundle') }}" class="inline-form">
+      {{ csrf_field() }}
       <div>
         <label for="new_bundle_name">New bundle name</label>
         <input type="text" id="new_bundle_name" name="name" placeholder="e.g. Trad Rack">

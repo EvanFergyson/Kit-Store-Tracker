@@ -12,6 +12,7 @@
           <li>
             {{ group.name }} <small>({{ group.subcategory.name }} &mdash; {{ group.items|length }} item(s))</small>
             <form method="post" action="{{ url_for('delete_item_group', group_id=group.id) }}" onsubmit="return confirm('Delete group {{ group.name }}?');">
+              {{ csrf_field() }}
               <button type="submit" class="btn btn-small btn-danger">Delete</button>
             </form>
           </li>
@@ -22,6 +23,7 @@
     {% endif %}
     {% if subcategories %}
       <form method="post" action="{{ url_for('add_item_group') }}" class="inline-form">
+        {{ csrf_field() }}
         <div>
           <label for="new_group_name">New group</label>
           <input type="text" id="new_group_name" name="name" placeholder="e.g. Nuts">

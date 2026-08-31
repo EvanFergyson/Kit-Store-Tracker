@@ -4,8 +4,12 @@
   <section class="card narrow">
     <h1>Committee Login</h1>
     <form method="post">
+      {{ csrf_field() }}
+      <label for="committee_name">Your name</label>
+      <input type="text" id="committee_name" name="committee_name" placeholder="e.g. Alex" autofocus>
+      <p class="field-hint">Shown against anything you sign out or collect this session.</p>
       <label for="password">Committee password</label>
-      <input type="password" id="password" name="password" required autofocus>
+      <input type="password" id="password" name="password" required>
       <button type="submit" class="btn btn-primary">Log In</button>
     </form>
   </section>

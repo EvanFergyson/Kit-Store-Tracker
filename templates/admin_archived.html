@@ -17,6 +17,7 @@
             <td>{{ item.subcategory.name if item.subcategory else '' }}</td>
             <td class="actions">
               <form method="post" action="{{ url_for('restore_item', item_id=item.id) }}">
+                {{ csrf_field() }}
                 <button type="submit" class="btn btn-small btn-success">Restore</button>
               </form>
             </td>

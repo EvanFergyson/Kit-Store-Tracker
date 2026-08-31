@@ -163,6 +163,12 @@ form label {
   color: var(--color-muted);
 }
 
+.field-hint {
+  margin: 0.25rem 0 0;
+  color: var(--color-muted);
+  font-size: 0.8rem;
+}
+
 form input,
 form select,
 form textarea {

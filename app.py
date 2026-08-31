@@ -6,16 +6,46 @@ from datetime import date, datetime
 from functools import wraps
 
 from flask import Flask, abort, flash, redirect, render_template, request, send_from_directory, session, url_for
+from flask_wtf.csrf import CSRFProtect, generate_csrf
+from markupsafe import Markup
 from sqlalchemy import func, inspect, or_, text
 from sqlalchemy.schema import CreateColumn
 
 from config import Config
 from models import Category, ItemGroup, ItemRequest, KitBundle, KitBundleLine, KitItem, SignOut, Subcategory, db
 
+csrf = CSRFProtect()
+
 # Basic brute-force throttle on the shared committee password: after this many
-# wrong guesses in a row, further attempts are blocked for a short cooldown.
+# wrong guesses in a row from the same IP, further attempts from it are
+# blocked for a short cooldown. Keyed by IP rather than the session, since a
+# session-stored counter resets for free the moment an attacker clears
+# cookies. Lives only in this process's memory - fine given the confirmed
+# single gunicorn worker (Procfile has no -w flag), and an accepted tradeoff
+# for a lightweight nudge on a low-stakes shared password rather than a
+# hardened rate-limiter; resets on every deploy/restart.
 LOGIN_MAX_ATTEMPTS = 5
 LOGIN_LOCKOUT_SECONDS = 30
+_login_attempts = {}  # {ip: (attempt_count, locked_until_timestamp)}
+
+
+def _login_locked_until(ip):
+    """Seconds-since-epoch the given IP is locked out until, or 0 if it's
+    not currently locked."""
+    locked_until = _login_attempts.get(ip, (0, 0))[1]
+    return locked_until if locked_until > datetime.utcnow().timestamp() else 0
+
+
+def _record_failed_login(ip):
+    attempts = _login_attempts.get(ip, (0, 0))[0] + 1
+    if attempts >= LOGIN_MAX_ATTEMPTS:
+        _login_attempts[ip] = (0, datetime.utcnow().timestamp() + LOGIN_LOCKOUT_SECONDS)
+    else:
+        _login_attempts[ip] = (attempts, 0)
+
+
+def _clear_login_attempts(ip):
+    _login_attempts.pop(ip, None)
 
 # Recurring club sessions offered on the checkout page for picking up/
 # returning kit, e.g. "Tuesday Bus - 6:45". "Other" is always appended so a
@@ -36,6 +66,27 @@ def create_app():
 
     os.makedirs(os.path.join(app.root_path, "instance"), exist_ok=True)
     db.init_app(app)
+    csrf.init_app(app)
+
+    # Every POST form in the templates calls {{ csrf_field() }} once, rather
+    # than each one spelling out its own <input type="hidden" name="csrf_token"
+    # value="{{ csrf_token() }}">, so there's exactly one place to get the
+    # markup right across ~20 forms.
+    app.jinja_env.globals["csrf_field"] = lambda: Markup(
+        f'<input type="hidden" name="csrf_token" value="{generate_csrf()}">'
+    )
+
+    @app.before_request
+    def _relax_secure_cookie_for_debug():
+        # SESSION_COOKIE_SECURE is seeded from Config.DEBUG (the FLASK_DEBUG
+        # env var) above, but the documented local-dev command in the
+        # README (`flask run --debug`) flips app.debug via a CLI flag
+        # *after* create_app() already ran - that wouldn't be reflected
+        # here otherwise, and a Secure cookie is silently dropped by the
+        # browser on plain http://127.0.0.1, breaking login. Recompute it
+        # from app.debug on every request so either way of enabling debug
+        # mode (the CLI flag or the env var) relaxes it the same way.
+        app.config["SESSION_COOKIE_SECURE"] = not app.debug
 
     with app.app_context():
         db.create_all()
@@ -56,6 +107,13 @@ def _ensure_schema():
     happened, not a general migration tool) - anything bigger than that
     (renaming a column, changing a type) should still be done by hand against
     the database directly.
+
+    Runs once per worker process at import time (create_app() is called at
+    module scope below). Fine with the current single-worker `gunicorn
+    app:app` (Procfile has no -w flag) - if that's ever changed to run
+    multiple workers, they'd all race to ALTER the same tables concurrently
+    on boot. Move this behind a startup lock (or a one-off predeploy step)
+    before scaling workers.
     """
     inspector = inspect(db.engine)
     existing_columns = {col["name"] for col in inspector.get_columns("categories")}
@@ -650,37 +708,37 @@ def register_routes(app):
     @app.route("/login", methods=["GET", "POST"])
     def login():
         if request.method == "POST":
-            locked_until = session.get("login_locked_until")
-            now = datetime.utcnow().timestamp()
-            if locked_until and now < locked_until:
-                flash(
-                    f"Too many incorrect attempts. Try again in {int(locked_until - now)} second(s).",
-                    "error",
-                )
+            client_ip = request.remote_addr
+            locked_until = _login_locked_until(client_ip)
+            if locked_until:
+                remaining = int(locked_until - datetime.utcnow().timestamp())
+                flash(f"Too many incorrect attempts. Try again in {remaining} second(s).", "error")
                 return render_template("login.html")
 
             password = request.form.get("password", "")
             if secrets.compare_digest(password, app.config["COMMITTEE_PASSWORD"]):
                 session["is_committee"] = True
-                session.pop("login_attempts", None)
-                session.pop("login_locked_until", None)
+                # Shown against sign-outs/collections this session processes
+                # (see _create_signout) - falls back to the generic
+                # "Committee" label if left blank, same as before this field
+                # existed.
+                session["committee_name"] = request.form.get("committee_name", "").strip() or "Committee"
+                _clear_login_attempts(client_ip)
                 flash("Logged in.", "success")
                 next_url = request.args.get("next") or url_for("sign_in_out")
                 return redirect(next_url)
 
-            attempts = session.get("login_attempts", 0) + 1
-            if attempts >= LOGIN_MAX_ATTEMPTS:
-                session["login_attempts"] = 0
-                session["login_locked_until"] = now + LOGIN_LOCKOUT_SECONDS
+            _record_failed_login(client_ip)
+            if _login_locked_until(client_ip):
                 flash(f"Too many incorrect attempts. Try again in {LOGIN_LOCKOUT_SECONDS} seconds.", "error")
             else:
-                session["login_attempts"] = attempts
                 flash("Incorrect password.", "error")
         return render_template("login.html")
 
     @app.route("/logout")
     def logout():
         session.pop("is_committee", None)
+        session.pop("committee_name", None)
         flash("Logged out.", "success")
         return redirect(url_for("home"))
 
@@ -1450,4 +1508,9 @@ def register_routes(app):
 app = create_app()
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # debug follows Config.DEBUG (FLASK_DEBUG env var) rather than always
+    # being True, so an accidental `python app.py` in production can't expose
+    # the Werkzeug interactive debugger (arbitrary code execution on any
+    # unhandled exception). The real deploy path is gunicorn (see Procfile),
+    # which never hits this branch at all.
+    app.run(debug=app.config["DEBUG"])

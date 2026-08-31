@@ -13,6 +13,7 @@
             <td>{{ line.name }}</td>
             <td>
               <form method="post" action="{{ url_for('update_basket_item', key=line.key) }}" class="basket-add-form js-basket-update">
+                {{ csrf_field() }}
                 <div class="qty-stepper">
                   <button type="button" class="qty-step qty-step-down" aria-label="Decrease quantity">&minus;</button>
                   <input type="number" name="quantity" min="1" value="{{ line.quantity }}" inputmode="numeric" aria-label="Quantity of {{ line.name }}">
@@ -23,6 +24,7 @@
             </td>
             <td class="col-tight">
               <form method="post" action="{{ url_for('remove_from_basket', key=line.key) }}" class="js-basket-remove">
+                {{ csrf_field() }}
                 <button type="submit" class="btn btn-small btn-danger">Remove</button>
               </form>
             </td>
@@ -35,6 +37,7 @@
     <section class="card narrow">
       <h2>Your Details</h2>
       <form method="post" id="checkout-form">
+        {{ csrf_field() }}
         <label for="requester_name">Your name</label>
         <input type="text" id="requester_name" name="requester_name" required>
 
