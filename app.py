@@ -1,8 +1,9 @@
 import os
 import re
 import secrets
+import time
 import uuid
-from datetime import date, datetime
+from datetime import date
 from functools import wraps
 
 from flask import Flask, abort, flash, redirect, render_template, request, send_from_directory, session, url_for
@@ -13,7 +14,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.schema import CreateColumn
 
 from config import Config
-from models import Category, ItemGroup, ItemRequest, KitBundle, KitBundleLine, KitItem, SignOut, Subcategory, db
+from models import Category, ItemGroup, ItemRequest, KitBundle, KitBundleLine, KitItem, SignOut, Subcategory, db, utcnow
 
 csrf = CSRFProtect()
 
@@ -34,13 +35,13 @@ def _login_locked_until(ip):
     """Seconds-since-epoch the given IP is locked out until, or 0 if it's
     not currently locked."""
     locked_until = _login_attempts.get(ip, (0, 0))[1]
-    return locked_until if locked_until > datetime.utcnow().timestamp() else 0
+    return locked_until if locked_until > time.time() else 0
 
 
 def _record_failed_login(ip):
     attempts = _login_attempts.get(ip, (0, 0))[0] + 1
     if attempts >= LOGIN_MAX_ATTEMPTS:
-        _login_attempts[ip] = (0, datetime.utcnow().timestamp() + LOGIN_LOCKOUT_SECONDS)
+        _login_attempts[ip] = (0, time.time() + LOGIN_LOCKOUT_SECONDS)
     else:
         _login_attempts[ip] = (attempts, 0)
 
@@ -217,7 +218,7 @@ def _relative_time(dt):
     template-facing helper. Shown next to (not instead of) the exact
     timestamp everywhere it's used, so there's still something to cross-check
     against."""
-    seconds = (datetime.utcnow() - dt).total_seconds()
+    seconds = (utcnow() - dt).total_seconds()
     if seconds < 60:
         return "just now"
     if seconds < 3600:
@@ -424,13 +425,13 @@ def basket_line_items(basket):
     step below know to record a group request instead of a specific item."""
     lines = []
     for item_id_str, quantity in basket.get("items", {}).items():
-        item = KitItem.query.get(int(item_id_str))
+        item = db.session.get(KitItem, int(item_id_str))
         if item and item.active:
             lines.append(
                 {"key": f"item:{item_id_str}", "name": item.name, "quantity": quantity, "group_id": None}
             )
     for group_id_str, quantity in basket.get("groups", {}).items():
-        group = ItemGroup.query.get(int(group_id_str))
+        group = db.session.get(ItemGroup, int(group_id_str))
         if group and group.active_items:
             lines.append(
                 {"key": f"group:{group_id_str}", "name": group.name, "quantity": quantity, "group_id": group.id}
@@ -553,7 +554,7 @@ def register_routes(app):
 
     @app.route("/request/category/<int:category_id>")
     def request_category(category_id):
-        category = Category.query.get_or_404(category_id)
+        category = db.get_or_404(Category, category_id)
         # Also block direct URL access to a hidden category, not just its
         # card on the browse page - otherwise "hidden" would only mean
         # "not linked to", which isn't what the committee is asking for.
@@ -658,13 +659,13 @@ def register_routes(app):
             message = "Please enter a whole number for quantity."
         elif item_id:
             ok = True
-            item = KitItem.query.get_or_404(item_id)
+            item = db.get_or_404(KitItem, item_id)
             key = str(item.id)
             basket["items"][key] = basket["items"].get(key, 0) + quantity
             message = f"Added {quantity} x {item.name} to your request list."
         elif group_id:
             ok = True
-            group = ItemGroup.query.get_or_404(group_id)
+            group = db.get_or_404(ItemGroup, group_id)
             key = str(group.id)
             basket["groups"][key] = basket["groups"].get(key, 0) + quantity
             message = f"Added {quantity} x {group.name} to your request list."
@@ -687,7 +688,7 @@ def register_routes(app):
 
     @app.route("/basket/add-bundle/<int:bundle_id>", methods=["POST"])
     def add_bundle_to_basket(bundle_id):
-        bundle = KitBundle.query.get_or_404(bundle_id)
+        bundle = db.get_or_404(KitBundle, bundle_id)
         basket = get_basket()
         is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest"
 
@@ -833,7 +834,7 @@ def register_routes(app):
             client_ip = request.remote_addr
             locked_until = _login_locked_until(client_ip)
             if locked_until:
-                remaining = int(locked_until - datetime.utcnow().timestamp())
+                remaining = int(locked_until - time.time())
                 flash(f"Too many incorrect attempts. Try again in {remaining} second(s).", "error")
                 return render_template("login.html")
 
@@ -920,7 +921,7 @@ def register_routes(app):
         """The actual per-item sign-out list for one category, one click in
         from the category-card grid on sign_in_out() - see the comment
         there for why this isn't all shown on one page any more."""
-        category = Category.query.get_or_404(category_id)
+        category = db.get_or_404(Category, category_id)
         items = (
             KitItem.query.filter_by(active=True)
             .join(Subcategory)
@@ -956,7 +957,7 @@ def register_routes(app):
     @app.route("/sign-out", methods=["POST"])
     @login_required
     def sign_out_item():
-        item = KitItem.query.get_or_404(request.form.get("item_id"))
+        item = db.get_or_404(KitItem, request.form.get("item_id"))
         quantity = parse_positive_int(request.form.get("quantity"))
         borrower_name = request.form.get("borrower_name", "").strip()
 
@@ -1000,7 +1001,7 @@ def register_routes(app):
         Creates one SignOut row per item actually used, all sharing the same
         borrower/notes, so the sign-out history still shows exactly what
         physically left the store."""
-        group = ItemGroup.query.get_or_404(request.form.get("group_id"))
+        group = db.get_or_404(ItemGroup, request.form.get("group_id"))
         borrower_name = request.form.get("borrower_name", "").strip()
         notes = request.form.get("notes", "").strip()
 
@@ -1044,9 +1045,9 @@ def register_routes(app):
     @app.route("/sign-in/<int:signout_id>", methods=["POST"])
     @login_required
     def sign_in_item(signout_id):
-        signout = SignOut.query.get_or_404(signout_id)
+        signout = db.get_or_404(SignOut, signout_id)
         if signout.signed_in_at is None:
-            signout.signed_in_at = datetime.utcnow()
+            signout.signed_in_at = utcnow()
             signout.item.quantity_available += signout.quantity
             db.session.commit()
             flash(f"Signed in {signout.quantity} x {signout.item.name} from {signout.borrower_name}.", "success")
@@ -1112,7 +1113,7 @@ def register_routes(app):
     @app.route("/admin/categories/<int:category_id>/toggle-visibility", methods=["POST"])
     @login_required
     def toggle_category_visibility(category_id):
-        category = Category.query.get_or_404(category_id)
+        category = db.get_or_404(Category, category_id)
         category.member_visible = not category.member_visible
         db.session.commit()
         state = "visible to members" if category.member_visible else "hidden from members"
@@ -1122,7 +1123,7 @@ def register_routes(app):
     @app.route("/admin/categories/<int:category_id>/delete", methods=["POST"])
     @login_required
     def delete_category(category_id):
-        category = Category.query.get_or_404(category_id)
+        category = db.get_or_404(Category, category_id)
         if category.subcategories:
             flash(f"Cannot delete '{category.name}' while it has subcategories.", "error")
         else:
@@ -1136,7 +1137,7 @@ def register_routes(app):
     def add_subcategory():
         name = request.form.get("name", "").strip()
         category_id = request.form.get("category_id")
-        category = Category.query.get(category_id) if category_id else None
+        category = db.session.get(Category, category_id) if category_id else None
 
         if not name or not category:
             flash("Subcategory name and category are required.", "error")
@@ -1151,7 +1152,7 @@ def register_routes(app):
     @app.route("/admin/subcategories/<int:subcategory_id>/delete", methods=["POST"])
     @login_required
     def delete_subcategory(subcategory_id):
-        subcategory = Subcategory.query.get_or_404(subcategory_id)
+        subcategory = db.get_or_404(Subcategory, subcategory_id)
         if subcategory.items:
             flash(f"Cannot delete '{subcategory.name}' while kit items use it.", "error")
         else:
@@ -1179,7 +1180,7 @@ def register_routes(app):
     @app.route("/admin/inventory/<int:category_id>")
     @login_required
     def admin_inventory_category(category_id):
-        category = Category.query.get_or_404(category_id)
+        category = db.get_or_404(Category, category_id)
         items = (
             KitItem.query.filter_by(active=True)
             .join(Subcategory)
@@ -1260,7 +1261,7 @@ def register_routes(app):
     @app.route("/admin/items/<int:item_id>/edit", methods=["GET", "POST"])
     @login_required
     def edit_item(item_id):
-        item = KitItem.query.get_or_404(item_id)
+        item = db.get_or_404(KitItem, item_id)
 
         if request.method == "POST":
             new_name = request.form.get("name", item.name).strip()
@@ -1317,7 +1318,7 @@ def register_routes(app):
     @app.route("/admin/items/<int:item_id>/delete", methods=["POST"])
     @login_required
     def delete_item(item_id):
-        item = KitItem.query.get_or_404(item_id)
+        item = db.get_or_404(KitItem, item_id)
         category_id = item.subcategory.category_id  # captured before any mutation below
         if any(so.is_out for so in item.sign_outs):
             flash(f"Cannot delete '{item.name}' while units are signed out.", "error")
@@ -1352,7 +1353,7 @@ def register_routes(app):
     @app.route("/admin/items/<int:item_id>/restore", methods=["POST"])
     @login_required
     def restore_item(item_id):
-        item = KitItem.query.get_or_404(item_id)
+        item = db.get_or_404(KitItem, item_id)
         item.active = True
         db.session.commit()
         flash(f"Restored '{item.name}' — it's back in the catalogue.", "success")
@@ -1390,7 +1391,7 @@ def register_routes(app):
     @app.route("/admin/groups/<int:group_id>/delete", methods=["POST"])
     @login_required
     def delete_item_group(group_id):
-        group = ItemGroup.query.get_or_404(group_id)
+        group = db.get_or_404(ItemGroup, group_id)
         if group.items:
             flash(
                 f"Cannot delete '{group.name}' while kit items still belong to it "
@@ -1449,7 +1450,7 @@ def register_routes(app):
     @app.route("/admin/bundles/<int:bundle_id>/edit", methods=["POST"])
     @login_required
     def edit_bundle(bundle_id):
-        bundle = KitBundle.query.get_or_404(bundle_id)
+        bundle = db.get_or_404(KitBundle, bundle_id)
         name = request.form.get("name", "").strip()
         description = request.form.get("description", "").strip()
 
@@ -1467,7 +1468,7 @@ def register_routes(app):
     @app.route("/admin/bundles/<int:bundle_id>/delete", methods=["POST"])
     @login_required
     def delete_bundle(bundle_id):
-        bundle = KitBundle.query.get_or_404(bundle_id)
+        bundle = db.get_or_404(KitBundle, bundle_id)
         name = bundle.name
         db.session.delete(bundle)  # cascade also removes its lines - the items themselves are untouched
         db.session.commit()
@@ -1477,15 +1478,15 @@ def register_routes(app):
     @app.route("/admin/bundles/<int:bundle_id>/lines/add", methods=["POST"])
     @login_required
     def add_bundle_line(bundle_id):
-        bundle = KitBundle.query.get_or_404(bundle_id)
+        bundle = db.get_or_404(KitBundle, bundle_id)
         quantity = parse_positive_int(request.form.get("quantity"))
         # The picker is a single <select> covering both items and groups -
         # see admin_bundles.html - so its value is "item:<id>" or
         # "group:<id>" and we work out which table to look in from that
         # prefix, rather than needing two separate pickers.
         kind, _, raw_id = request.form.get("entry_id", "").partition(":")
-        item = KitItem.query.get(int(raw_id)) if kind == "item" and raw_id.isdigit() else None
-        group = ItemGroup.query.get(int(raw_id)) if kind == "group" and raw_id.isdigit() else None
+        item = db.session.get(KitItem, int(raw_id)) if kind == "item" and raw_id.isdigit() else None
+        group = db.session.get(ItemGroup, int(raw_id)) if kind == "group" and raw_id.isdigit() else None
 
         if not item and not group:
             flash("Choose an item or group to add to the bundle.", "error")
@@ -1554,9 +1555,9 @@ def register_routes(app):
             flash("Unknown action.", "error")
             return redirect(url_for("admin"))
 
-        item_request = ItemRequest.query.get_or_404(request_id)
+        item_request = db.get_or_404(ItemRequest, request_id)
         item_request.status = "approved" if action == "approve" else "denied"
-        item_request.resolved_at = datetime.utcnow()
+        item_request.resolved_at = utcnow()
         db.session.commit()
         flash(f"Request from {item_request.requester_name} {item_request.status}.", "success")
         return redirect(url_for("admin"))
@@ -1572,7 +1573,7 @@ def register_routes(app):
         status = "approved" if action == "approve" else "denied"
         for item_request in items:
             item_request.status = status
-            item_request.resolved_at = datetime.utcnow()
+            item_request.resolved_at = utcnow()
         db.session.commit()
         if items:
             flash(f"{len(items)} item(s) from {items[0].requester_name}'s request {status}.", "success")
@@ -1584,7 +1585,7 @@ def register_routes(app):
         """Turn an approved request into a real sign-out once the member has
         actually picked the kit up, so the two systems stay in sync instead of
         relying on the committee to remember to do this manually."""
-        item_request = ItemRequest.query.get_or_404(request_id)
+        item_request = db.get_or_404(ItemRequest, request_id)
         # Collect can be actioned from either Sign In/Out (the usual place) or
         # Resolved Requests, so send the committee back to whichever page they
         # actually clicked from instead of always landing on Resolved Requests.
@@ -1604,7 +1605,7 @@ def register_routes(app):
             # reach the requested quantity (quantity_<item_id> fields, same
             # convention as sign_out_group), rather than requiring one single
             # item to have the whole amount in stock on its own.
-            group = ItemGroup.query.get(item_request.group_id)
+            group = db.session.get(ItemGroup, item_request.group_id)
             splits, error = _parse_group_split_quantities(
                 group.active_items if group else [], request.form
             )

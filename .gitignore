@@ -32,7 +32,6 @@ __pycache__/
 *.pyc
 venv/
 .venv/
-.python-version
 
 # Flask / project secrets & local data
 .env

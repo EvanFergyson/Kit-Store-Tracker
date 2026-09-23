@@ -1,9 +1,15 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func
 
 db = SQLAlchemy()
+
+
+def utcnow():
+    """Current UTC time as a naive datetime, matching how timestamps are
+    stored (replacement for the deprecated datetime.utcnow())."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class Category(db.Model):
@@ -55,7 +61,7 @@ class ItemGroup(db.Model):
     name = db.Column(db.String(120), unique=True, nullable=False)
     subcategory_id = db.Column(db.Integer, db.ForeignKey("subcategories.id"), nullable=False)
     description = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
 
     subcategory = db.relationship("Subcategory")
     # backref="group" gives every KitItem in this group a `.group` attribute
@@ -106,7 +112,7 @@ class KitItem(db.Model):
     active = db.Column(db.Boolean, nullable=False, default=True)
     # Admin-only info: never rendered on the public request or committee sign-in/out pages.
     purchase_date = db.Column(db.Date, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
 
     sign_outs = db.relationship("SignOut", backref="item", lazy=True)
 
@@ -133,7 +139,7 @@ class KitBundle(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), unique=True, nullable=False)
     description = db.Column(db.Text, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
 
     lines = db.relationship(
         "KitBundleLine",
@@ -189,7 +195,7 @@ class SignOut(db.Model):
     quantity = db.Column(db.Integer, nullable=False, default=1)
     notes = db.Column(db.Text, nullable=True)
     checked_out_by = db.Column(db.String(120), nullable=True)  # committee member who processed it
-    signed_out_at = db.Column(db.DateTime, default=datetime.utcnow)
+    signed_out_at = db.Column(db.DateTime, default=utcnow)
     signed_in_at = db.Column(db.DateTime, nullable=True)
 
     @property
@@ -233,7 +239,7 @@ class ItemRequest(db.Model):
     # a real SignOut record, so the admin page can tell "approved" apart from
     # "approved and collected" instead of the two systems drifting out of sync.
     fulfilled_signout_id = db.Column(db.Integer, db.ForeignKey("sign_outs.id"), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=utcnow)
     resolved_at = db.Column(db.DateTime, nullable=True)
 
     fulfilled_signout = db.relationship("SignOut")
@@ -262,4 +268,4 @@ class ItemRequest(db.Model):
     def matching_group(self):
         """The ItemGroup this request refers to, if it was made against a
         group rather than a specific item (see group_id above)."""
-        return ItemGroup.query.get(self.group_id) if self.group_id else None
+        return db.session.get(ItemGroup, self.group_id) if self.group_id else None

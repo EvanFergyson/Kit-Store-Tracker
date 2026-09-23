@@ -17,7 +17,7 @@ Run with:  python seed_data.py
 from datetime import datetime
 
 from app import create_app
-from models import Category, ItemGroup, KitBundle, KitBundleLine, KitItem, SignOut, Subcategory, db
+from models import Category, ItemGroup, KitBundle, KitBundleLine, KitItem, SignOut, Subcategory, db, utcnow
 
 # category name -> list of subcategory names, in the order the club's
 # spreadsheet lists them.
@@ -505,7 +505,7 @@ def run():
             already = SignOut.query.filter_by(item_id=item.id, borrower_name=borrower_name, quantity=quantity).first()
             if already:
                 continue
-            signed_out_at = datetime.strptime(date_str, "%Y-%m-%d") if date_str else datetime.utcnow()
+            signed_out_at = datetime.strptime(date_str, "%Y-%m-%d") if date_str else utcnow()
             db.session.add(
                 SignOut(
                     item_id=item.id,
