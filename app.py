@@ -818,7 +818,10 @@ def send_email(to, subject, html):
         OUTBOX.append({"to": to, "subject": subject, "html": html})
         current_app.logger.info("Email not sent (no RESEND_API_KEY) to %s: %s", to, subject)
         return True
-    payload = json.dumps({"from": config["MAIL_FROM"], "to": [to], "subject": subject, "html": html}).encode()
+    message = {"from": config["MAIL_FROM"], "to": [to], "subject": subject, "html": html}
+    if config.get("MAIL_REPLY_TO"):
+        message["reply_to"] = config["MAIL_REPLY_TO"]
+    payload = json.dumps(message).encode()
     req = urllib.request.Request(
         RESEND_URL,
         data=payload,

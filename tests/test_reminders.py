@@ -140,14 +140,17 @@ def test_resend_request_shape(app, item, monkeypatch):
 
     monkeypatch.setattr(app_module.urllib.request, "urlopen", fake_urlopen)
     app.config["RESEND_API_KEY"] = "re_test"
+    app.config["MAIL_REPLY_TO"] = "gear@example.com"
     try:
         with app.app_context():
             assert app_module.send_email("sam@example.com", "Hello", "<p>Hi</p>")
     finally:
         app.config["RESEND_API_KEY"] = None
+        app.config["MAIL_REPLY_TO"] = None
     assert captured["url"] == "https://api.resend.com/emails"
     assert captured["headers"]["Authorization"] == "Bearer re_test"
     assert captured["body"]["to"] == ["sam@example.com"] and captured["body"]["subject"] == "Hello"
+    assert captured["body"]["reply_to"] == "gear@example.com"
 
 
 # --- endpoint ----------------------------------------------------------------

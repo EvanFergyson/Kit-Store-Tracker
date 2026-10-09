@@ -64,6 +64,9 @@ class Config:
     RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
     MAIL_FROM = os.environ.get("MAIL_FROM", "CUMC Kit Store <kit@example.org>")
     GEAR_SEC_EMAIL = os.environ.get("GEAR_SEC_EMAIL")
+    # Where replies to reminder emails go (the sending address itself has no
+    # inbox). Falls back to GEAR_SEC_EMAIL.
+    MAIL_REPLY_TO = os.environ.get("MAIL_REPLY_TO") or GEAR_SEC_EMAIL
     CRON_SECRET = os.environ.get("CRON_SECRET")
     OVERDUE_REMINDER_EVERY_DAYS = 3
     # Neon (like most hosted Postgres) drops idle connections; check each one
