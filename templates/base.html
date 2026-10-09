@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}CUMC Kit Store{% endblock %}</title>
+  <!-- Nunito Sans only downloads on devices without Avenir Next (i.e. not
+       Apple ones), since the browser fetches a web font only when it's used. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito+Sans:opsz,wght@6..12,400;6..12,500;6..12,600;6..12,700&display=swap">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <link rel="icon" href="{{ url_for('static', filename='img/logo.svg') }}" type="image/svg+xml">
 </head>
@@ -46,27 +51,60 @@
     </symbol>
   </svg>
 
-  <header class="site-header">
-    <div class="container header-inner">
-      <a class="brand" href="{{ url_for('home') }}" aria-label="CUMC Kit Store home" title="CUMC Kit Store">
-        <img src="{{ url_for('static', filename='img/logo.svg') }}" alt="" class="brand-logo">
-        CUMC Kit Store
+  {% set ep = request.endpoint or '' %}
+  {% set section = 'request' if ep in ('request_kit', 'request_category', 'search_kit') else
+                   'basket' if ep == 'view_basket' else
+                   'signio' if ep.startswith('sign_in_out') else
+                   'admin' if ep.startswith('admin') or ep in ('add_item', 'edit_item') else
+                   'gear' if ep.startswith('gear') or ep in ('add_gear_unit', 'inspect_gear_unit', 'edit_gear_unit') else
+                   'home' if ep == 'home' else '' %}
+  {% set is_committee = session.get('is_committee') %}
+
+  <!-- Desktop: thin icon rail on the left. Phones get the bottom tab bar
+       below instead; both carry the same destinations. -->
+  <nav class="rail" aria-label="Main">
+    <a class="rail-logo" href="{{ url_for('home') }}" aria-label="CUMC Kit Store home" title="CUMC Kit Store">
+      <img src="{{ url_for('static', filename='img/logo.svg') }}" alt="">
+    </a>
+    <a class="rail-link{{ ' active' if section == 'request' else '' }}" href="{{ url_for('request_kit') }}" aria-label="Request Kit" title="Request Kit"><svg class="nav-icon"><use href="#icon-kit"/></svg></a>
+    <a class="rail-link{{ ' active' if section == 'basket' else '' }}" href="{{ url_for('view_basket') }}" aria-label="Request List" title="Request List">
+      <svg class="nav-icon"><use href="#icon-list"/></svg>
+      <span class="nav-count js-basket-count"{% if not basket_count %} hidden{% endif %}>{{ basket_count }}</span>
+    </a>
+    {% if is_committee %}
+      <a class="rail-link{{ ' active' if section == 'signio' else '' }}" href="{{ url_for('sign_in_out') }}" aria-label="Sign In/Out" title="Sign In/Out"><svg class="nav-icon"><use href="#icon-swap"/></svg></a>
+      <a class="rail-link{{ ' active' if section in ('admin', 'gear') else '' }}" href="{{ url_for('admin') }}" aria-label="Admin" title="Admin"><svg class="nav-icon"><use href="#icon-settings"/></svg></a>
+    {% endif %}
+    <span class="rail-spacer"></span>
+    {% if is_committee %}
+      <a class="rail-link" href="{{ url_for('logout') }}" aria-label="Log Out" title="Log Out"><svg class="nav-icon"><use href="#icon-logout"/></svg></a>
+    {% else %}
+      <a class="rail-link" href="{{ url_for('login') }}" aria-label="Committee Login" title="Committee Login"><svg class="nav-icon"><use href="#icon-login"/></svg></a>
+    {% endif %}
+  </nav>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="topbar-logo" href="{{ url_for('home') }}" aria-label="CUMC Kit Store home">
+        <img src="{{ url_for('static', filename='img/logo.svg') }}" alt="">
       </a>
+      <a class="wordmark" href="{{ url_for('home') }}">CUMC Kit Store</a>
       <form method="get" action="{{ url_for('search_kit') }}" class="nav-search" role="search">
-        <input type="search" name="q" placeholder="Search kit&hellip;" aria-label="Search kit">
         <svg class="nav-search-icon" aria-hidden="true"><use href="#icon-search"/></svg>
+        <input type="search" name="q" placeholder="Search kit&hellip;" aria-label="Search kit" value="{{ request.args.get('q', '') if ep == 'search_kit' else '' }}">
       </form>
-      <nav>
-        <a href="{{ url_for('request_kit') }}" aria-label="Request Kit" title="Request Kit"><svg class="nav-icon"><use href="#icon-kit"/></svg> Request Kit</a>
-        <a href="{{ url_for('view_basket') }}" aria-label="Request List{% if basket_count %} ({{ basket_count }} items){% endif %}" title="Request List"><svg class="nav-icon"><use href="#icon-list"/></svg> Request List<span id="basket-count-badge"{% if not basket_count %} hidden{% endif %}> ({{ basket_count }})</span></a>
-        {% if session.get('is_committee') %}
-          <a href="{{ url_for('sign_in_out') }}" aria-label="Sign In/Out" title="Sign In/Out"><svg class="nav-icon"><use href="#icon-swap"/></svg> Sign In/Out</a>
-          <a href="{{ url_for('admin') }}" aria-label="Admin" title="Admin"><svg class="nav-icon"><use href="#icon-settings"/></svg> Admin</a>
-          <a href="{{ url_for('logout') }}" aria-label="Log Out" title="Log Out"><svg class="nav-icon"><use href="#icon-logout"/></svg> Log Out</a>
+      <nav class="topbar-links" aria-label="Shortcuts">
+        <a href="{{ url_for('request_kit') }}"{% if section == 'request' %} aria-current="page"{% endif %}>Request Kit</a>
+        <a href="{{ url_for('view_basket') }}"{% if section == 'basket' %} aria-current="page"{% endif %}>Request List<span class="js-basket-count-text"{% if not basket_count %} hidden{% endif %}> ({{ basket_count }})</span></a>
+        {% if is_committee %}
+          <a href="{{ url_for('logout') }}">Log Out</a>
         {% else %}
-          <a href="{{ url_for('login') }}" aria-label="Committee Login" title="Committee Login"><svg class="nav-icon"><use href="#icon-login"/></svg> Committee Login</a>
+          <a href="{{ url_for('login') }}">Committee Login</a>
         {% endif %}
       </nav>
+      <a class="topbar-account" href="{{ url_for('logout') if is_committee else url_for('login') }}" aria-label="{{ 'Log Out' if is_committee else 'Committee Login' }}">
+        <svg class="nav-icon"><use href="{{ '#icon-logout' if is_committee else '#icon-login' }}"/></svg>
+      </a>
     </div>
   </header>
 
@@ -83,6 +121,28 @@
 
     {% block content %}{% endblock %}
   </main>
+
+  <nav class="tabbar" aria-label="Main">
+    <a class="tab{{ ' active' if section in ('home', 'request') else '' }}" href="{{ url_for('request_kit') }}">
+      <svg class="nav-icon"><use href="#icon-kit"/></svg><span>Request</span>
+    </a>
+    <a class="tab{{ ' active' if section == 'basket' else '' }}" href="{{ url_for('view_basket') }}">
+      <svg class="nav-icon"><use href="#icon-list"/></svg><span>List</span>
+      <span class="nav-count js-basket-count"{% if not basket_count %} hidden{% endif %}>{{ basket_count }}</span>
+    </a>
+    {% if is_committee %}
+      <a class="tab{{ ' active' if section == 'signio' else '' }}" href="{{ url_for('sign_in_out') }}">
+        <svg class="nav-icon"><use href="#icon-swap"/></svg><span>Sign In/Out</span>
+      </a>
+      <a class="tab{{ ' active' if section in ('admin', 'gear') else '' }}" href="{{ url_for('admin') }}">
+        <svg class="nav-icon"><use href="#icon-settings"/></svg><span>Admin</span>
+      </a>
+    {% else %}
+      <a class="tab{{ ' active' if ep == 'login' else '' }}" href="{{ url_for('login') }}">
+        <svg class="nav-icon"><use href="#icon-login"/></svg><span>Committee</span>
+      </a>
+    {% endif %}
+  </nav>
 
   <footer class="site-footer">
     <div class="container">Cardiff University Mountaineering Club &mdash; Kit Store Tracker</div>

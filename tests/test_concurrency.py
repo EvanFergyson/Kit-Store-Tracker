@@ -147,3 +147,34 @@ def test_duplicate_name_race_through_route_is_handled_gracefully(client, monkeyp
         assert Category.query.filter_by(name="Handled Race Category").count() == 1
         Category.query.filter_by(name="Handled Race Category").delete()
         db.session.commit()
+
+
+def test_sign_in_twice_only_returns_stock_once(client, stocked_item, app):
+    """Double-tapping 'Sign in' (or two committee members signing in the same
+    loan) must not add the loan's quantity back to stock twice."""
+    with app.app_context():
+        item = db.session.get(KitItem, stocked_item)
+        signout = app_module._create_signout(item, 1, "Borrower", "", "Tester")
+        db.session.commit()
+        signout_id = signout.id
+
+    login(client)
+    token = get_csrf_token(client, "/sign-in-out")
+    for _ in range(2):
+        response = client.post(f"/sign-in/{signout_id}", data={"csrf_token": token})
+        assert response.status_code == 302
+
+    with app.app_context():
+        assert db.session.get(KitItem, stocked_item).quantity_available == 1
+        assert db.session.get(SignOut, signout_id).signed_in_at is not None
+
+
+@pytest.mark.parametrize("bad_id", ["abc", "1.5", ""])
+def test_sign_out_with_bad_item_id_is_404(client, bad_id):
+    login(client)
+    token = get_csrf_token(client, "/admin/categories")
+    response = client.post(
+        "/sign-out",
+        data={"item_id": bad_id, "quantity": "1", "borrower_name": "X", "csrf_token": token},
+    )
+    assert response.status_code == 404

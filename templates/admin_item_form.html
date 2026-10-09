@@ -43,6 +43,17 @@
         {% endfor %}
       </select>
 
+      {% if racks %}
+        <label for="rack_id">Rack <small>(optional)</small></label>
+        <select id="rack_id" name="rack_id">
+          <option value="">None</option>
+          {% for rack in racks %}
+            <option value="{{ rack.id }}" {% if mode == 'edit' and item.rack_id == rack.id %}selected{% endif %}>{{ rack.name }}</option>
+          {% endfor %}
+        </select>
+        <p class="field-hint">Rack kit is only ever signed out with its whole rack.</p>
+      {% endif %}
+
       <label for="location">Storage location</label>
       <input type="text" id="location" name="location" value="{{ (item.location or '') if mode == 'edit' else '' }}">
 
@@ -54,6 +65,12 @@
       </div>
       {% if mode == 'edit' %}
         <p class="empty-state">{{ item.quantity_available }} of {{ item.quantity_total }} currently available.</p>
+        {% if item.subcategory.track_serials %}
+          {% set registered = item.units | selectattr('in_service') | list | length %}
+          {% if registered != item.quantity_total %}
+            <p class="field-hint">Gear register: {{ registered }} piece{{ 's' if registered != 1 else '' }} in service vs a stock total of {{ item.quantity_total }}.</p>
+          {% endif %}
+        {% endif %}
       {% endif %}
 
       <label for="purchase_date">Purchase date <small>(admin only)</small></label>

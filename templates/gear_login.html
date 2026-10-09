@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Gear Register Login{% endblock %}
+{% block content %}
+  <section class="card narrow">
+    <h1>Gear Register</h1>
+    <p class="empty-state">Serial numbers and inspection records. This needs the gear password, not the committee one.</p>
+    <form method="post">
+      {{ csrf_field() }}
+      <label for="gear_name">Your name</label>
+      <input type="text" id="gear_name" name="gear_name" placeholder="e.g. Sam" autofocus>
+      <p class="field-hint">Recorded against inspections you log.</p>
+      <label for="password">Gear password</label>
+      <input type="password" id="password" name="password" required>
+      <button type="submit" class="btn btn-primary">Log In</button>
+    </form>
+  </section>
+{% endblock %}

@@ -32,8 +32,8 @@
               {{ entry.name }}
               {% if entry.kind == "group" %}<span class="badge badge-group">Multiple options</span>{% endif %}
             </td>
-            <td>{{ entry.category.name }} &rsaquo; {{ entry.subcategory.name }}</td>
-            <td>{{ entry.quantity_available }} of {{ entry.quantity_total }}</td>
+            <td data-label="Category">{{ entry.category.name }} &rsaquo; {{ entry.subcategory.name }}</td>
+            <td data-label="Available">{{ entry.quantity_available }} of {{ entry.quantity_total }}</td>
             <td>
               <form method="post" action="{{ url_for('add_to_basket') }}" class="basket-add-form js-basket-add">
                 {{ csrf_field() }}

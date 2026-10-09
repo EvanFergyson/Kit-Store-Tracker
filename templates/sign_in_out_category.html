@@ -54,6 +54,8 @@
                       </div>
                     {% endfor %}
                     <p class="sign-out-group-total" aria-live="polite"></p>
+                    <label for="group-{{ entry.id }}-due">Due back</label>
+                    <input type="date" id="group-{{ entry.id }}-due" name="due_date" value="{{ default_due_date.isoformat() }}" required>
                     <label for="group-{{ entry.id }}-notes">Notes</label>
                     <input type="text" id="group-{{ entry.id }}-notes" name="notes">
                     <button type="submit" class="btn btn-small btn-primary">Confirm Sign Out</button>
@@ -69,6 +71,7 @@
                     <input type="number" name="quantity" min="1" value="1" inputmode="numeric" aria-label="Quantity of {{ entry.name }}">
                     <button type="button" class="qty-step qty-step-up" aria-label="Increase quantity">+</button>
                   </div>
+                  <input type="date" name="due_date" value="{{ default_due_date.isoformat() }}" required aria-label="Due back">
                   <input type="text" name="notes" placeholder="Notes (optional)" aria-label="Notes">
                   <button type="submit" class="btn btn-small btn-primary" {% if entry.quantity_available < 1 %}disabled{% endif %}>Sign Out</button>
                 </form>

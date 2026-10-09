@@ -1,0 +1,20 @@
+{% extends "email/_layout.html" %}
+{% block body %}
+  <p style="margin:0 0 16px;font-size:16px;">Hi {{ name }},</p>
+  <p style="margin:0 0 20px;font-size:16px;line-height:1.5;">{{ intro }}</p>
+  <table style="width:100%;border-collapse:collapse;font-size:15px;">
+    {% for loan in loans %}
+      <tr>
+        <td style="padding:10px 0;border-top:1px solid #e5e5ea;">{{ loan.quantity }} &times; {{ loan.item.name }}</td>
+        <td style="padding:10px 0;border-top:1px solid #e5e5ea;text-align:right;white-space:nowrap;{% if loan.due_date and loan.due_date < today %}color:#9a3412;font-weight:600;{% endif %}">
+          {% if loan.due_date %}
+            {% if loan.due_date < today %}Overdue since {{ loan.due_date.strftime('%a %d %b') }}
+            {% elif loan.due_date == today %}Due today
+            {% else %}Due {{ loan.due_date.strftime('%a %d %b') }}{% endif %}
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+  </table>
+  <p style="margin:20px 0 0;font-size:14px;color:#6e6e73;line-height:1.5;">If anything gets damaged or lost, tell a committee member when you return it so it can be checked before the next person uses it.</p>
+{% endblock %}

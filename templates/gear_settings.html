@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Register Settings{% endblock %}
+{% block content %}
+  <h1>Register Settings</h1>
+  {% include "_gear_nav.html" %}
+
+  <section class="card">
+    <p class="empty-state">Turn on serial tracking for safety-critical kit. Lifespan is the manufacturer's maximum age from manufacture (e.g. 10 years for many harnesses and slings). Pieces get flagged a year before and once they pass it.</p>
+    <form method="post">
+      {{ csrf_field() }}
+      <table>
+        <thead><tr><th>Subcategory</th><th>Track serials</th><th>Lifespan (years)</th></tr></thead>
+        <tbody>
+          {% for sub in subcategories %}
+            <tr>
+              <td>{{ sub.name }} <small class="muted">{{ sub.category.name }}</small></td>
+              <td data-label="Track serials"><input type="checkbox" name="track_{{ sub.id }}" value="1" {% if sub.track_serials %}checked{% endif %} aria-label="Track serials for {{ sub.name }}"></td>
+              <td data-label="Lifespan"><input type="number" name="max_age_{{ sub.id }}" min="1" inputmode="numeric" class="input-narrow" value="{{ sub.max_age_years or '' }}" aria-label="Lifespan in years for {{ sub.name }}"></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button type="submit" class="btn btn-primary">Save Settings</button>
+    </form>
+  </section>
+{% endblock %}

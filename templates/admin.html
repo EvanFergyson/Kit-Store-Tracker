@@ -38,7 +38,7 @@
               {% for r in group.lines %}
               <tr>
                 <td>{{ r.item_name }}</td>
-                <td>{{ r.quantity }}</td>
+                <td data-label="Qty">{{ r.quantity }}</td>
                 <td class="actions">
                   <form method="post" action="{{ url_for('resolve_request', request_id=r.id, action='approve') }}">
                     {{ csrf_field() }}

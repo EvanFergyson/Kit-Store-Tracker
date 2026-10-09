@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Racks{% endblock %}
+{% block content %}
+  <h1>Racks</h1>
+  {% include "_admin_nav.html" %}
+
+  <section class="card">
+    <p class="empty-state">A rack is a colour-coded set of kit (e.g. the Red trad rack) that's always signed out and returned as one. Its pieces can't be lent on their own.</p>
+
+    {% for rack, blockers in racks %}
+      <div class="request-group">
+        <div class="request-group-header">
+          <div>
+            <h3 class="rack-title"><span class="rack-swatch" style="background: {{ rack.colour_hex }}"></span>{{ rack.name }}</h3>
+            <small class="muted">{{ rack.colour }}{% if rack.notes %} &middot; {{ rack.notes }}{% endif %}</small>
+          </div>
+          <span class="actions">
+            {% if rack.open_loan %}
+              <span class="badge badge-out">Out to {{ rack.open_loan.borrower_name }}</span>
+            {% elif blockers %}
+              <span class="badge badge-denied">Blocked</span>
+            {% else %}
+              <span class="badge badge-approved">Ready</span>
+            {% endif %}
+          </span>
+        </div>
+
+        {% if rack.items %}
+          <ul class="plain-list">
+            {% for item in rack.items %}
+              <li>
+                <span>{{ item.quantity_total }} &times; {{ item.name }}{% if not item.active %} <span class="badge badge-archived">Archived</span>{% endif %}</span>
+                <form method="post" action="{{ url_for('remove_rack_item', rack_id=rack.id, item_id=item.id) }}">
+                  {{ csrf_field() }}
+                  <button type="submit" class="btn btn-small btn-danger">Remove</button>
+                </form>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="empty-state">No kit in this rack yet.</p>
+        {% endif %}
+        {% if blockers and not rack.open_loan %}
+          <p class="field-hint">Can't go out: {{ blockers | join('; ') }}.</p>
+        {% endif %}
+
+        {% if assignable_by_category %}
+          <form method="post" action="{{ url_for('add_rack_item', rack_id=rack.id) }}" class="inline-form mt-md">
+            {{ csrf_field() }}
+            <div>
+              <label for="rack-{{ rack.id }}-item">Add kit to this rack</label>
+              <select id="rack-{{ rack.id }}-item" name="item_id" required>
+                <option value="" disabled selected>Choose an item&hellip;</option>
+                {% for category_name, items in assignable_by_category.items() %}
+                  <optgroup label="{{ category_name }}">
+                    {% for item in items %}<option value="{{ item.id }}">{{ item.name }} ({{ item.quantity_total }})</option>{% endfor %}
+                  </optgroup>
+                {% endfor %}
+              </select>
+            </div>
+            <button type="submit" class="btn btn-small btn-primary">Add</button>
+          </form>
+        {% endif %}
+
+        <details class="edit-bundle-details mt-md">
+          <summary class="btn btn-small btn-secondary">Edit rack</summary>
+          <form method="post" action="{{ url_for('edit_rack', rack_id=rack.id) }}" class="inline-form mt-sm">
+            {{ csrf_field() }}
+            <div>
+              <label for="rack-{{ rack.id }}-name">Name</label>
+              <input type="text" id="rack-{{ rack.id }}-name" name="name" value="{{ rack.name }}" required>
+            </div>
+            <div>
+              <label for="rack-{{ rack.id }}-colour">Colour</label>
+              <input type="text" id="rack-{{ rack.id }}-colour" name="colour" value="{{ rack.colour }}" required>
+            </div>
+            <div>
+              <label for="rack-{{ rack.id }}-hex">Swatch</label>
+              <input type="color" id="rack-{{ rack.id }}-hex" name="colour_hex" value="{{ rack.colour_hex }}">
+            </div>
+            <div>
+              <label for="rack-{{ rack.id }}-notes">Notes</label>
+              <input type="text" id="rack-{{ rack.id }}-notes" name="notes" value="{{ rack.notes or '' }}">
+            </div>
+            <button type="submit" class="btn btn-small btn-primary">Save</button>
+          </form>
+          <form method="post" action="{{ url_for('delete_rack', rack_id=rack.id) }}" class="mt-sm" onsubmit="return confirm('Delete the {{ rack.name }} rack? Its kit goes back to being individual items.');">
+            {{ csrf_field() }}
+            <button type="submit" class="btn btn-small btn-danger">Delete rack</button>
+          </form>
+        </details>
+      </div>
+    {% else %}
+      <p class="empty-state">No racks yet.</p>
+    {% endfor %}
+  </section>
+
+  <section class="card">
+    <h2>New rack</h2>
+    <form method="post" action="{{ url_for('add_rack') }}" class="inline-form">
+      {{ csrf_field() }}
+      <div>
+        <label for="new-rack-name">Name</label>
+        <input type="text" id="new-rack-name" name="name" placeholder="e.g. Red Trad Rack" required>
+      </div>
+      <div>
+        <label for="new-rack-colour">Colour</label>
+        <input type="text" id="new-rack-colour" name="colour" placeholder="e.g. Red" required>
+      </div>
+      <div>
+        <label for="new-rack-hex">Swatch</label>
+        <input type="color" id="new-rack-hex" name="colour_hex" value="#bc1016">
+      </div>
+      <div>
+        <label for="new-rack-notes">Notes</label>
+        <input type="text" id="new-rack-notes" name="notes" placeholder="Optional">
+      </div>
+      <button type="submit" class="btn btn-small btn-primary">Create rack</button>
+    </form>
+  </section>
+{% endblock %}

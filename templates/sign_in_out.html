@@ -38,6 +38,8 @@
                         </div>
                       {% endfor %}
                       <p class="sign-out-group-total" aria-live="polite"></p>
+                      <label for="collect-{{ r.id }}-due">Due back</label>
+                      <input type="date" id="collect-{{ r.id }}-due" name="due_date" value="{{ default_due_date.isoformat() }}" required>
                       <button type="submit" class="btn btn-small btn-primary">Confirm Collection</button>
                     </form>
                   </details>
@@ -45,8 +47,9 @@
                   <small class="empty-state">No items left in this group &mdash; sign out manually</small>
                 {% endif %}
               {% elif r.matching_item %}
-                <form method="post" action="{{ url_for('collect_request', request_id=r.id) }}">
+                <form method="post" action="{{ url_for('collect_request', request_id=r.id) }}" class="sign-out-item-form">
                   {{ csrf_field() }}
+                  <input type="date" name="due_date" value="{{ default_due_date.isoformat() }}" required aria-label="Due back">
                   <button type="submit" class="btn btn-small btn-primary">Collect</button>
                 </form>
               {% else %}
@@ -61,6 +64,62 @@
       <p class="empty-state">Nothing waiting for collection right now.</p>
     {% endif %}
   </section>
+
+  <datalist id="borrower-names">
+    {% for name in borrower_names %}<option value="{{ name }}">{% endfor %}
+  </datalist>
+
+  {% if racks %}
+  <section class="card card-action" id="racks">
+    <h2>Racks</h2>
+    <p class="empty-state">Colour-coded racks go out and come back as one &mdash; every piece at once.</p>
+    {% for rack, blockers in racks %}
+      {% set loan = rack.open_loan %}
+      <div class="request-group">
+        <div class="request-group-header">
+          <h3 class="rack-title"><span class="rack-swatch" style="background: {{ rack.colour_hex }}"></span>{{ rack.name }}</h3>
+          {% if loan %}
+            <span class="badge badge-out">Out</span>
+          {% elif blockers %}
+            <span class="badge badge-denied">Blocked</span>
+          {% else %}
+            <span class="badge badge-approved">Available</span>
+          {% endif %}
+        </div>
+        <p class="rack-contents">
+          {% for item in rack.items %}{{ item.quantity_total }} &times; {{ item.name }}{% if not loop.last %}, {% endif %}{% else %}No kit assigned yet.{% endfor %}
+        </p>
+
+        {% if loan %}
+          <p>Out to <strong>{{ loan.borrower_name }}</strong> since {{ loan.signed_out_at.strftime('%d %b') }}{% if loan.due_date %} &middot; due back {{ loan.due_date.strftime('%a %d %b') }}{% if loan.due_date < today %} <span class="badge badge-denied">Overdue</span>{% endif %}{% endif %}</p>
+          <form method="post" action="{{ url_for('sign_in_rack', loan_id=loan.id) }}">
+            {{ csrf_field() }}
+            <button type="submit" class="btn btn-small btn-primary">Sign In Whole Rack</button>
+          </form>
+        {% elif blockers %}
+          <p class="field-hint">Can't go out: {{ blockers | join('; ') }}.</p>
+        {% else %}
+          <form method="post" action="{{ url_for('sign_out_rack', rack_id=rack.id) }}" class="inline-form">
+            {{ csrf_field() }}
+            <div>
+              <label for="rack-{{ rack.id }}-borrower">Borrower</label>
+              <input type="text" id="rack-{{ rack.id }}-borrower" name="borrower_name" list="borrower-names" required autocomplete="off">
+            </div>
+            <div>
+              <label for="rack-{{ rack.id }}-due">Due back</label>
+              <input type="date" id="rack-{{ rack.id }}-due" name="due_date" value="{{ default_due_date.isoformat() }}" required>
+            </div>
+            <div>
+              <label for="rack-{{ rack.id }}-notes">Notes</label>
+              <input type="text" id="rack-{{ rack.id }}-notes" name="notes" placeholder="Optional">
+            </div>
+            <button type="submit" class="btn btn-small btn-primary">Sign Out Rack</button>
+          </form>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </section>
+  {% endif %}
 
   <section class="card card-action">
     <h2>Sign Out Manually</h2>
@@ -85,7 +144,7 @@
       <table>
         <thead>
           <tr>
-            <th>Item</th><th>Borrower</th><th>Qty</th><th>Signed Out</th><th>Notes</th><th></th>
+            <th>Item</th><th>Borrower</th><th>Qty</th><th>Signed Out</th><th>Due</th><th>Notes</th><th></th>
           </tr>
         </thead>
         <tbody>
@@ -98,7 +157,10 @@
               {{ so.signed_out_at.strftime('%d %b %Y %H:%M') }}
               <br><small class="empty-state">{{ so.signed_out_at|relative_time }}</small>
             </td>
-            <td data-label="Notes">{{ so.notes or '' }}</td>
+            <td{% if so.due_date %} data-label="Due"{% endif %}>
+              {% if so.due_date %}{{ so.due_date.strftime('%a %d %b') }}{% if so.is_overdue %} <span class="badge badge-denied">Overdue</span>{% endif %}{% endif %}
+            </td>
+            <td{% if so.notes %} data-label="Notes"{% endif %}>{{ so.notes or '' }}</td>
             <td>
               <form method="post" action="{{ url_for('sign_in_item', signout_id=so.id) }}">
                 {{ csrf_field() }}
@@ -116,7 +178,7 @@
 
   <details class="card card-log">
     <summary><h2>Sign-Out History</h2></summary>
-    <p class="empty-state">Every sign-out ever recorded, out or returned, for tracking activity over time.</p>
+    <p class="empty-state">The latest 100 sign-outs (a rack counts as one), out or returned, for tracking activity over time.</p>
     {% if sign_out_history %}
       <table>
         <thead>
@@ -127,9 +189,15 @@
         <tbody>
           {% for so in sign_out_history %}
           <tr>
-            <td>{{ so.item.name }}</td>
-            <td data-label="Borrower">{{ so.borrower_name }}</td>
-            <td data-label="Qty">{{ so.quantity }}</td>
+            {% if so.rack_id is defined %}
+              <td><span class="rack-swatch" style="background: {{ so.rack.colour_hex }}"></span>{{ so.rack.name }} <span class="badge badge-group">Rack</span></td>
+              <td data-label="Borrower">{{ so.borrower_name }}</td>
+              <td data-label="Qty">{{ so.sign_outs | length }} items</td>
+            {% else %}
+              <td>{{ so.item.name }}</td>
+              <td data-label="Borrower">{{ so.borrower_name }}</td>
+              <td data-label="Qty">{{ so.quantity }}</td>
+            {% endif %}
             <td data-label="Signed Out">{{ so.signed_out_at.strftime('%d %b %Y %H:%M') }}</td>
             <td data-label="Signed In">
               {% if so.signed_in_at %}
@@ -138,7 +206,7 @@
                 <span class="badge badge-out">Still out</span>
               {% endif %}
             </td>
-            <td data-label="Notes">{{ so.notes or '' }}</td>
+            <td{% if so.notes %} data-label="Notes"{% endif %}>{{ so.notes or '' }}</td>
           </tr>
           {% endfor %}
         </tbody>

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Add Piece{% endblock %}
+{% block content %}
+  <h1>Add a Piece</h1>
+  {% include "_gear_nav.html" %}
+
+  {% if items %}
+  <section class="card narrow">
+    <form method="post" class="js-serial-decode" data-decode-url="{{ url_for('gear_decode') }}">
+      {{ csrf_field() }}
+      <label for="item_id">Kit item</label>
+      <select id="item_id" name="item_id" required>
+        <option value="" disabled selected>Choose&hellip;</option>
+        {% for item in items %}<option value="{{ item.id }}">{{ item.name }} &middot; {{ item.subcategory.name }}</option>{% endfor %}
+      </select>
+
+      <label for="brand">Brand</label>
+      <select id="brand" name="brand">
+        {% for brand in brands %}<option value="{{ brand }}">{{ brand }}</option>{% endfor %}
+      </select>
+
+      <label for="serial">Serial number</label>
+      <input type="text" id="serial" name="serial" required autocomplete="off" autocapitalize="characters">
+
+      <label for="manufacture_date">Manufacture date</label>
+      <input type="date" id="manufacture_date" name="manufacture_date">
+      <p class="field-hint js-decode-hint" aria-live="polite">Filled in automatically when the serial can be decoded &mdash; always check it against the label.</p>
+
+      <label for="purchase_date">Purchase date <small>(optional)</small></label>
+      <input type="date" id="purchase_date" name="purchase_date">
+
+      <label for="grade">Condition now <small>(optional)</small></label>
+      <select id="grade" name="grade">
+        <option value="">Not inspected yet</option>
+        {% for key, label in grades.items() if key != 'retire' %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+      </select>
+
+      <label for="notes">Notes</label>
+      <textarea id="notes" name="notes" rows="2"></textarea>
+
+      <button type="submit" class="btn btn-primary">Add to Register</button>
+    </form>
+  </section>
+  {% else %}
+    <section class="card"><p class="empty-state">No subcategories have serial tracking turned on yet &mdash; switch it on in <a href="{{ url_for('gear_settings') }}">Settings</a> first.</p></section>
+  {% endif %}
+{% endblock %}

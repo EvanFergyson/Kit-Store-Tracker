@@ -27,8 +27,8 @@
         {% for item in items %}
         <tr class="admin-kit-row" data-subcategory-id="{{ item.subcategory_id }}">
           <td>{{ item.name }}</td>
-          <td>{{ item.subcategory.name }}</td>
-          <td>{{ item.group.name if item.group else '' }}</td>
+          <td data-label="Subcategory">{{ item.subcategory.name }}</td>
+          <td{% if item.group %} data-label="Group"{% endif %}>{{ item.group.name if item.group else '' }}</td>
           <td data-label="Available">{{ item.quantity_available }}</td>
           <td data-label="Total">{{ item.quantity_total }}</td>
           <td class="actions">

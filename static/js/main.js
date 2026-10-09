@@ -5,6 +5,9 @@ document.addEventListener("DOMContentLoaded", () => {
   initQtySteppers();
   initSessionOtherToggle();
   initGroupSplitTotals();
+  scrollActiveSubnavIntoView();
+  initSerialDecode();
+  initRetireToggle();
 });
 
 // The app has two feedback systems: floating toasts (basket add/update/
@@ -46,14 +49,15 @@ function showToast(message, isError) {
 }
 
 function updateBasketBadge(count) {
-  const badge = document.getElementById("basket-count-badge");
-  if (!badge) return;
-  if (count > 0) {
-    badge.textContent = ` (${count})`;
-    badge.hidden = false;
-  } else {
-    badge.hidden = true;
-  }
+  // The count appears in the rail, the phone tab bar and the top-bar link.
+  document.querySelectorAll(".js-basket-count").forEach((badge) => {
+    badge.textContent = count;
+    badge.hidden = count <= 0;
+  });
+  document.querySelectorAll(".js-basket-count-text").forEach((text) => {
+    text.textContent = ` (${count})`;
+    text.hidden = count <= 0;
+  });
 }
 
 // Forms with class "js-basket-add" (both the catalog "Add to Basket" rows
@@ -321,6 +325,66 @@ function initSessionOtherToggle() {
         const isOther = radio.value === "Other" && radio.checked;
         otherInput.style.display = isOther ? "" : "none";
         otherInput.required = isOther;
+      });
+    });
+  });
+}
+
+// On phones the admin tabs are a single sideways-scrolling row, so a tab near
+// the end (e.g. Resolved Requests) would start off-screen when it's active.
+function scrollActiveSubnavIntoView() {
+  const active = document.querySelector(".admin-subnav-link.active");
+  if (!active) return;
+  const nav = active.parentElement;
+  if (nav.scrollWidth <= nav.clientWidth) return;
+  nav.scrollLeft = active.offsetLeft - nav.offsetLeft - 16;
+}
+
+// Gear register: when brand + serial decode to a manufacture date, pre-fill
+// the date field (never overwriting one already typed) and say where it came
+// from, so the Gear Secretary checks it against the label.
+function initSerialDecode() {
+  document.querySelectorAll(".js-serial-decode").forEach((form) => {
+    const brand = form.querySelector('[name="brand"]');
+    const serial = form.querySelector('[name="serial"]');
+    const made = form.querySelector('[name="manufacture_date"]');
+    const hint = form.querySelector(".js-decode-hint");
+    if (!brand || !serial || !made) return;
+    let filledByDecode = false;
+
+    const decode = async () => {
+      if (made.value && !filledByDecode) return;
+      const params = new URLSearchParams({ brand: brand.value, serial: serial.value });
+      try {
+        const response = await fetch(`${form.dataset.decodeUrl}?${params}`);
+        const result = await response.json();
+        if (result.date) {
+          made.value = result.date;
+          filledByDecode = true;
+          if (hint) hint.textContent = "Decoded from the serial - check it against the label.";
+        } else if (filledByDecode) {
+          made.value = "";
+          filledByDecode = false;
+          if (hint) hint.textContent = "Couldn't decode this serial - enter the date from the label.";
+        }
+      } catch (err) {
+        // Decoding is a convenience; typing the date still works.
+      }
+    };
+    serial.addEventListener("change", decode);
+    brand.addEventListener("change", decode);
+    made.addEventListener("input", () => { filledByDecode = false; });
+  });
+}
+
+// Only offer "also remove it from stock" when the grade being recorded is Retire.
+function initRetireToggle() {
+  document.querySelectorAll(".js-retire-toggle").forEach((form) => {
+    const extra = form.querySelector(".js-retire-only");
+    if (!extra) return;
+    form.querySelectorAll('input[name="grade"]').forEach((radio) => {
+      radio.addEventListener("change", () => {
+        extra.hidden = !(radio.checked && radio.value === "retire");
       });
     });
   });

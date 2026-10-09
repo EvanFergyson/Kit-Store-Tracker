@@ -13,8 +13,8 @@
           {% for item in archived_items %}
           <tr>
             <td>{{ item.name }} <span class="badge badge-archived">Archived</span></td>
-            <td>{{ item.category.name if item.category else '' }}</td>
-            <td>{{ item.subcategory.name if item.subcategory else '' }}</td>
+            <td{% if item.category %} data-label="Category"{% endif %}>{{ item.category.name if item.category else '' }}</td>
+            <td{% if item.subcategory %} data-label="Subcategory"{% endif %}>{{ item.subcategory.name if item.subcategory else '' }}</td>
             <td class="actions">
               <form method="post" action="{{ url_for('restore_item', item_id=item.id) }}">
                 {{ csrf_field() }}

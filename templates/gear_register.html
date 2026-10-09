@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Gear Register{% endblock %}
+{% block content %}
+  <h1>Gear Register</h1>
+  {% include "_gear_nav.html" %}
+
+  <div class="filter-chips" role="group" aria-label="Show">
+    <a class="filter-chip{{ ' active' if show == 'all' else '' }}" href="{{ url_for('gear_register') }}">In service ({{ counts.all }})</a>
+    <a class="filter-chip{{ ' active' if show == 'action' else '' }}" href="{{ url_for('gear_register', show='action') }}">Needs action ({{ counts.action }})</a>
+    <a class="filter-chip{{ ' active' if show == 'retired' else '' }}" href="{{ url_for('gear_register', show='retired') }}">Retired ({{ counts.retired }})</a>
+  </div>
+
+  {% for subcategory, units in groups %}
+    <section class="card">
+      <h2>{{ subcategory.name }} <small class="muted">{{ subcategory.category.name }}{% if subcategory.max_age_years %} &middot; {{ subcategory.max_age_years }}-year lifespan{% endif %}</small></h2>
+      <table>
+        <thead><tr><th>Serial</th><th>Item</th><th>Brand</th><th>Made</th><th>Condition</th><th>Flags</th></tr></thead>
+        <tbody>
+          {% for unit in units %}
+            {% set latest = unit.latest_inspection %}
+            <tr>
+              <td><a class="row-link" href="{{ url_for('gear_unit', unit_id=unit.id) }}">{{ unit.serial }}</a></td>
+              <td data-label="Item">{{ unit.item.name }}</td>
+              <td{% if unit.brand %} data-label="Brand"{% endif %}>{{ unit.brand or '' }}</td>
+              <td data-label="Made">
+                {% if unit.manufacture_date %}{{ unit.manufacture_date.strftime('%b %Y') }} <small class="muted">({{ '%.1f' | format(unit.age_years) }} yrs)</small>{% else %}<span class="muted">Unknown</span>{% endif %}
+              </td>
+              <td data-label="Condition">
+                {% if not unit.in_service %}<span class="badge badge-archived">Retired</span>
+                {% elif latest %}<span class="badge grade-{{ latest.grade }}">{{ latest.grade_label }}</span>
+                {% else %}<span class="muted">Not inspected</span>{% endif %}
+              </td>
+              <td>
+                {% for flag in unit.flags() if not unit.latest_inspection or flag != unit.latest_inspection.grade_label %}<span class="badge badge-out">{{ flag }}</span> {% endfor %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  {% else %}
+    <section class="card">
+      {% if show == 'action' %}
+        <p class="empty-state">Nothing needs attention right now.</p>
+      {% elif show == 'retired' %}
+        <p class="empty-state">No retired pieces.</p>
+      {% else %}
+        <p class="empty-state">The register is empty. Turn on serial tracking for a subcategory in <a href="{{ url_for('gear_settings') }}">Settings</a>, then <a href="{{ url_for('add_gear_unit') }}">add pieces</a> or <a href="{{ url_for('gear_import') }}">import a CSV</a>.</p>
+      {% endif %}
+    </section>
+  {% endfor %}
+{% endblock %}

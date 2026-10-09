@@ -12,13 +12,13 @@
         <tbody>
           {% for r in resolved_requests %}
           <tr>
-            <td>{{ r.requester_name }}</td>
-            <td>{{ r.item_name }}</td>
-            <td>{{ r.quantity }}</td>
-            <td>{{ r.pickup_display or '—' }}</td>
-            <td>{{ r.return_display or '—' }}</td>
-            <td><span class="badge badge-{{ r.status }}">{{ r.status }}</span></td>
-            <td>{{ r.resolved_at.strftime('%d %b %Y') if r.resolved_at else '' }}</td>
+            <td data-label="Name">{{ r.requester_name }}</td>
+            <td data-label="Item">{{ r.item_name }}</td>
+            <td data-label="Qty">{{ r.quantity }}</td>
+            <td data-label="Pickup">{{ r.pickup_display or '—' }}</td>
+            <td data-label="Return">{{ r.return_display or '—' }}</td>
+            <td data-label="Status"><span class="badge badge-{{ r.status }}">{{ r.status }}</span></td>
+            <td{% if r.resolved_at %} data-label="Resolved"{% endif %}>{{ r.resolved_at.strftime('%d %b %Y') if r.resolved_at else '' }}</td>
             <td>
               {% if r.status == 'approved' %}
                 {% if r.fulfilled_signout_id %}

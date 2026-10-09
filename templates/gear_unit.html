@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}{{ unit.serial }}{% endblock %}
+{% block content %}
+  <a class="back-link" href="{{ url_for('gear_register') }}">&larr; Register</a>
+  <h1>{{ unit.serial }}</h1>
+  {% include "_gear_nav.html" %}
+
+  {% set latest = unit.latest_inspection %}
+  <section class="card">
+    <h2>{{ unit.item.name }}</h2>
+    <dl class="detail-list">
+      <dt>Status</dt>
+      <dd>{% if unit.in_service %}In service{% else %}<span class="badge badge-archived">Retired</span> {{ unit.retired_at.strftime('%d %b %Y') }}{% endif %}</dd>
+      <dt>Condition</dt>
+      <dd>{% if latest %}<span class="badge grade-{{ latest.grade }}">{{ latest.grade_label }}</span> <small class="muted">{{ latest.inspected_at.strftime('%d %b %Y') }}</small>{% else %}Not inspected yet{% endif %}</dd>
+      <dt>Brand</dt><dd>{{ unit.brand or '—' }}</dd>
+      <dt>Made</dt>
+      <dd>
+        {% if unit.manufacture_date %}{{ unit.manufacture_date.strftime('%d %b %Y') }} &middot; {{ '%.1f' | format(unit.age_years) }} years old
+          {% if unit.manufacture_date_source == 'decoded' %}<small class="muted">(decoded from serial)</small>{% endif %}
+        {% else %}Unknown{% endif %}
+      </dd>
+      <dt>Lifespan</dt><dd>{{ (unit.item.subcategory.max_age_years ~ ' years from manufacture') if unit.item.subcategory.max_age_years else 'Not set' }}</dd>
+      <dt>Purchased</dt><dd>{{ unit.purchase_date.strftime('%d %b %Y') if unit.purchase_date else '—' }}</dd>
+      {% if unit.notes %}<dt>Notes</dt><dd>{{ unit.notes }}</dd>{% endif %}
+    </dl>
+    {% for flag in unit.flags() if not unit.latest_inspection or flag != unit.latest_inspection.grade_label %}<span class="badge badge-out">{{ flag }}</span> {% endfor %}
+  </section>
+
+  {% if unit.in_service %}
+  <section class="card card-action">
+    <h2>Record Inspection</h2>
+    <form method="post" action="{{ url_for('inspect_gear_unit', unit_id=unit.id) }}" class="js-retire-toggle">
+      {{ csrf_field() }}
+      <fieldset class="grade-options">
+        <legend>Condition</legend>
+        {% for key, label in grades.items() %}
+          <label class="grade-option"><input type="radio" name="grade" value="{{ key }}" required> {{ label }}</label>
+        {% endfor %}
+      </fieldset>
+      <label for="inspect-notes">What did you find?</label>
+      <textarea id="inspect-notes" name="notes" rows="3" placeholder="e.g. sheath fuzzing near the middle mark"></textarea>
+      <label class="check-option js-retire-only" hidden><input type="checkbox" name="reduce_stock" value="1" checked> Also remove it from {{ unit.item.name }} stock</label>
+      <button type="submit" class="btn btn-primary">Save Inspection</button>
+    </form>
+  </section>
+  {% endif %}
+
+  <section class="card">
+    <h2>Inspection History</h2>
+    {% if unit.inspections %}
+      <table>
+        <thead><tr><th>Date</th><th>Condition</th><th>By</th><th>Notes</th></tr></thead>
+        <tbody>
+          {% for inspection in unit.inspections %}
+            <tr>
+              <td>{{ inspection.inspected_at.strftime('%d %b %Y') }}</td>
+              <td data-label="Condition"><span class="badge grade-{{ inspection.grade }}">{{ inspection.grade_label }}</span></td>
+              <td{% if inspection.inspected_by %} data-label="By"{% endif %}>{{ inspection.inspected_by or '' }}</td>
+              <td{% if inspection.notes %} data-label="Notes"{% endif %}>{{ inspection.notes or '' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="empty-state">No inspections recorded yet.</p>
+    {% endif %}
+  </section>
+
+  <details class="card card-log">
+    <summary><h2>Edit Details</h2></summary>
+    <form method="post" action="{{ url_for('edit_gear_unit', unit_id=unit.id) }}" class="js-serial-decode" data-decode-url="{{ url_for('gear_decode') }}">
+      {{ csrf_field() }}
+      <label for="brand">Brand</label>
+      <select id="brand" name="brand">
+        {% for brand in brands %}<option value="{{ brand }}" {% if brand == unit.brand %}selected{% endif %}>{{ brand }}</option>{% endfor %}
+        {% if unit.brand and unit.brand not in brands %}<option value="{{ unit.brand }}" selected>{{ unit.brand }}</option>{% endif %}
+      </select>
+      <label for="serial">Serial number</label>
+      <input type="text" id="serial" name="serial" value="{{ unit.serial }}" required autocomplete="off">
+      <label for="manufacture_date">Manufacture date</label>
+      <input type="date" id="manufacture_date" name="manufacture_date" value="{{ unit.manufacture_date.isoformat() if unit.manufacture_date else '' }}">
+      <p class="field-hint js-decode-hint" aria-live="polite"></p>
+      <label for="purchase_date">Purchase date</label>
+      <input type="date" id="purchase_date" name="purchase_date" value="{{ unit.purchase_date.isoformat() if unit.purchase_date else '' }}">
+      <label for="unit-notes">Notes</label>
+      <textarea id="unit-notes" name="notes" rows="2">{{ unit.notes or '' }}</textarea>
+      <button type="submit" class="btn btn-primary">Save Details</button>
+    </form>
+  </details>
+{% endblock %}

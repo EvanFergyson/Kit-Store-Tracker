@@ -37,8 +37,10 @@
         {% endif %}
         <form method="post" action="{{ url_for('add_category') }}" class="inline-form">
           {{ csrf_field() }}
-          <label for="new_category_name">New category</label>
-          <input type="text" id="new_category_name" name="name" placeholder="e.g. Hardware">
+          <div>
+            <label for="new_category_name">New category</label>
+            <input type="text" id="new_category_name" name="name" placeholder="e.g. Hardware">
+          </div>
           <button type="submit" class="btn btn-small btn-primary">Add</button>
         </form>
       </div>
@@ -49,7 +51,7 @@
           <ul class="plain-list">
             {% for sub in subcategories %}
               <li>
-                {{ sub.name }} <small>({{ sub.category.name }})</small>
+                <span>{{ sub.name }} <small class="muted">{{ sub.category.name }}</small></span>
                 <form method="post" action="{{ url_for('delete_subcategory', subcategory_id=sub.id) }}" onsubmit="return confirm('Delete subcategory {{ sub.name }}?');">
                   {{ csrf_field() }}
                   <button type="submit" class="btn btn-small btn-danger">Delete</button>
@@ -63,12 +65,16 @@
         {% if categories %}
           <form method="post" action="{{ url_for('add_subcategory') }}" class="inline-form">
             {{ csrf_field() }}
-            <label for="new_subcategory_name">New subcategory</label>
-            <input type="text" id="new_subcategory_name" name="name" placeholder="e.g. Single Rope">
-            <label for="new_subcategory_category">Under category</label>
-            <select id="new_subcategory_category" name="category_id">
-              {% for cat in categories %}<option value="{{ cat.id }}">{{ cat.name }}</option>{% endfor %}
-            </select>
+            <div>
+              <label for="new_subcategory_name">New subcategory</label>
+              <input type="text" id="new_subcategory_name" name="name" placeholder="e.g. Single Rope">
+            </div>
+            <div>
+              <label for="new_subcategory_category">Under category</label>
+              <select id="new_subcategory_category" name="category_id">
+                {% for cat in categories %}<option value="{{ cat.id }}">{{ cat.name }}</option>{% endfor %}
+              </select>
+            </div>
             <button type="submit" class="btn btn-small btn-primary">Add</button>
           </form>
         {% else %}

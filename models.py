@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import func
@@ -42,6 +42,11 @@ class Subcategory(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(80), nullable=False)
     category_id = db.Column(db.Integer, db.ForeignKey("categories.id"), nullable=False)
+    # Gear register settings, set by the Gear Secretary: whether kit in this
+    # subcategory gets per-piece serial tracking, and the manufacturer's
+    # maximum lifespan from manufacture (e.g. 10 years for textiles).
+    track_serials = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text("false"))
+    max_age_years = db.Column(db.Integer, nullable=True)
 
     items = db.relationship("KitItem", backref="subcategory", lazy=True, order_by="KitItem.name")
 
@@ -74,7 +79,9 @@ class ItemGroup(db.Model):
 
     @property
     def active_items(self):
-        return [item for item in self.items if item.active]
+        # Rack pieces only ever leave as part of their rack, so they never
+        # count towards a group's lendable stock.
+        return [item for item in self.items if item.active and item.rack_id is None]
 
     @property
     def quantity_available(self):
@@ -100,6 +107,10 @@ class KitItem(db.Model):
     # aggregated listing (e.g. 'Nuts') instead of as its own row - see
     # ItemGroup above. Leave unset for kit that's requested individually as normal.
     group_id = db.Column(db.Integer, db.ForeignKey("item_groups.id"), nullable=True)
+    # Set if this item is part of a colour-coded rack (e.g. the Red trad
+    # rack). Rack pieces are rack-only: they're signed out and back in with
+    # the whole rack, never on their own.
+    rack_id = db.Column(db.Integer, db.ForeignKey("racks.id"), nullable=True)
     description = db.Column(db.Text, nullable=True)
     location = db.Column(db.String(120), nullable=True)
     quantity_total = db.Column(db.Integer, nullable=False, default=1)
@@ -123,6 +134,46 @@ class KitItem(db.Model):
     @property
     def category(self):
         return self.subcategory.category if self.subcategory else None
+
+
+class Rack(db.Model):
+    """A colour-coded set of kit (e.g. the Red trad rack) that is signed out
+    and returned as one unit."""
+
+    __tablename__ = "racks"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80), unique=True, nullable=False)
+    colour = db.Column(db.String(40), nullable=False)
+    colour_hex = db.Column(db.String(7), nullable=False, default="#888888")
+    notes = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+    items = db.relationship("KitItem", backref="rack", lazy=True, order_by="KitItem.name")
+    loans = db.relationship("RackLoan", backref="rack", lazy=True, order_by="RackLoan.signed_out_at.desc()")
+
+    @property
+    def open_loan(self):
+        return next((loan for loan in self.loans if loan.signed_in_at is None), None)
+
+
+class RackLoan(db.Model):
+    """One whole-rack sign-out. Each piece also gets its own SignOut row
+    (linked via SignOut.rack_loan_id) so stock moves through the usual
+    atomic _create_signout path."""
+
+    __tablename__ = "rack_loans"
+
+    id = db.Column(db.Integer, primary_key=True)
+    rack_id = db.Column(db.Integer, db.ForeignKey("racks.id"), nullable=False)
+    borrower_name = db.Column(db.String(120), nullable=False)
+    notes = db.Column(db.Text, nullable=True)
+    due_date = db.Column(db.Date, nullable=True)
+    checked_out_by = db.Column(db.String(120), nullable=True)
+    signed_out_at = db.Column(db.DateTime, default=utcnow)
+    signed_in_at = db.Column(db.DateTime, nullable=True)
+
+    sign_outs = db.relationship("SignOut", backref="rack_loan", lazy=True)
 
 
 class KitBundle(db.Model):
@@ -181,7 +232,97 @@ class KitBundleLine(db.Model):
         """Whether this line still points at something a member could
         actually be given: an active KitItem, or a group that still has at
         least one active item left in it."""
-        return bool(self.group.active_items) if self.group_id else self.item.active
+        if self.group_id:
+            return bool(self.group.active_items)
+        return self.item.active and self.item.rack_id is None
+
+
+INSPECTION_GRADES = {
+    "good": "Good",
+    "minor_wear": "Minor wear",
+    "needs_attention": "Needs attention",
+    "retire": "Retire",
+}
+# Grades that mean a piece shouldn't be lent until someone deals with it.
+ACTION_GRADES = ("needs_attention", "retire")
+
+
+class GearUnit(db.Model):
+    """One physical, serial-numbered piece of a KitItem (e.g. one specific
+    harness out of the 'Harness - Medium' stock), kept in the gear register
+    by the Gear Secretary. Sign-outs stay quantity-based; this is the record
+    of each piece's age and condition."""
+
+    __tablename__ = "gear_units"
+
+    id = db.Column(db.Integer, primary_key=True)
+    item_id = db.Column(db.Integer, db.ForeignKey("kit_items.id"), nullable=False)
+    serial = db.Column(db.String(80), nullable=False)
+    brand = db.Column(db.String(40), nullable=True)
+    manufacture_date = db.Column(db.Date, nullable=True)
+    # "decoded" if the date came from the serial number, "manual" if typed in.
+    manufacture_date_source = db.Column(db.String(10), nullable=True)
+    purchase_date = db.Column(db.Date, nullable=True)
+    status = db.Column(db.String(12), nullable=False, default="in_service")  # in_service / retired
+    retired_at = db.Column(db.DateTime, nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=utcnow)
+
+    item = db.relationship("KitItem", backref=db.backref("units", lazy=True, order_by="GearUnit.serial"))
+    inspections = db.relationship(
+        "Inspection", backref="unit", lazy=True, order_by="Inspection.inspected_at.desc()", cascade="all, delete-orphan"
+    )
+
+    @property
+    def latest_inspection(self):
+        return self.inspections[0] if self.inspections else None
+
+    @property
+    def in_service(self):
+        return self.status == "in_service"
+
+    @property
+    def age_years(self):
+        if not self.manufacture_date:
+            return None
+        return (date.today() - self.manufacture_date).days / 365.25
+
+    def flags(self):
+        """Reasons this in-service piece needs the Gear Secretary's attention."""
+        if not self.in_service:
+            return []
+        flags = []
+        latest = self.latest_inspection
+        if latest is None:
+            flags.append("Never inspected")
+        elif latest.grade in ACTION_GRADES:
+            flags.append(INSPECTION_GRADES[latest.grade])
+        lifespan = self.item.subcategory.max_age_years if self.item.subcategory else None
+        age = self.age_years
+        if lifespan and age is not None:
+            if age >= lifespan:
+                flags.append("Past lifespan")
+            elif age >= lifespan - 1:
+                flags.append("Within a year of lifespan")
+        return flags
+
+
+class Inspection(db.Model):
+    """One damage/condition check of a GearUnit. The newest one is the
+    piece's current condition; the rest are its history."""
+
+    __tablename__ = "inspections"
+
+    id = db.Column(db.Integer, primary_key=True)
+    unit_id = db.Column(db.Integer, db.ForeignKey("gear_units.id"), nullable=False)
+    grade = db.Column(db.String(20), nullable=False)
+    notes = db.Column(db.Text, nullable=True)
+    inspected_by = db.Column(db.String(120), nullable=True)
+    inspected_at = db.Column(db.DateTime, default=utcnow)
+
+    @property
+    def grade_label(self):
+        return INSPECTION_GRADES.get(self.grade, self.grade)
 
 
 class SignOut(db.Model):
@@ -195,12 +336,35 @@ class SignOut(db.Model):
     quantity = db.Column(db.Integer, nullable=False, default=1)
     notes = db.Column(db.Text, nullable=True)
     checked_out_by = db.Column(db.String(120), nullable=True)  # committee member who processed it
+    rack_loan_id = db.Column(db.Integer, db.ForeignKey("rack_loans.id"), nullable=True)
+    # When it's due back, and (for loans collected from an online request)
+    # who to send receipts and reminders to.
+    due_date = db.Column(db.Date, nullable=True)
+    borrower_email = db.Column(db.String(200), nullable=True)
     signed_out_at = db.Column(db.DateTime, default=utcnow)
     signed_in_at = db.Column(db.DateTime, nullable=True)
 
     @property
     def is_out(self):
         return self.signed_in_at is None
+
+    @property
+    def is_overdue(self):
+        return self.is_out and self.due_date is not None and self.due_date < date.today()
+
+
+class EmailLog(db.Model):
+    """One reminder-type email sent about one loan (or a digest, with no
+    loan). Lets the hourly reminder run send each email exactly once."""
+
+    __tablename__ = "email_log"
+
+    id = db.Column(db.Integer, primary_key=True)
+    kind = db.Column(db.String(20), nullable=False)  # receipt / day_before / overdue / digest
+    signout_id = db.Column(db.Integer, db.ForeignKey("sign_outs.id"), nullable=True)
+    recipient = db.Column(db.String(200), nullable=False)
+    sent_on = db.Column(db.Date, nullable=False)
+    sent_at = db.Column(db.DateTime, default=utcnow)
 
 
 class ItemRequest(db.Model):
@@ -261,7 +425,7 @@ class ItemRequest(db.Model):
         be silently signed out via this shortcut."""
         name = (self.item_name or "").strip().lower()
         return KitItem.query.filter(
-            func.lower(KitItem.name) == name, KitItem.active.is_(True)
+            func.lower(KitItem.name) == name, KitItem.active.is_(True), KitItem.rack_id.is_(None)
         ).first()
 
     @property

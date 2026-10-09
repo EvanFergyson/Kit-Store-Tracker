@@ -49,7 +49,7 @@
                     {% if line.group_id %}<span class="badge badge-group">Multiple options</span>{% endif %}
                     {% if not line.active %} <span class="badge badge-archived">Archived</span>{% endif %}
                   </td>
-                  <td>{{ line.quantity }}</td>
+                  <td data-label="Qty">{{ line.quantity }}</td>
                   <td class="actions">
                     <form method="post" action="{{ url_for('delete_bundle_line', bundle_id=bundle.id, line_id=line.id) }}">
                       {{ csrf_field() }}

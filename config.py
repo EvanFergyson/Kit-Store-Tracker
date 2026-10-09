@@ -7,6 +7,7 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 _DEV_SECRET_KEY = "dev-secret-key-change-me"
 _DEV_COMMITTEE_PASSWORD = "changeme"
+_DEV_GEAR_PASSWORD = "gearchangeme"
 
 
 class Config:
@@ -26,12 +27,16 @@ class Config:
     # pages. Same reasoning as SECRET_KEY above.
     COMMITTEE_PASSWORD = os.environ.get("COMMITTEE_PASSWORD", _DEV_COMMITTEE_PASSWORD if DEBUG else None)
 
-    if not DEBUG and (SECRET_KEY is None or COMMITTEE_PASSWORD is None):
+    # Separate password for the gear register (serials, inspections), kept by
+    # the Gear Secretary - the shared committee login doesn't unlock it.
+    GEAR_PASSWORD = os.environ.get("GEAR_PASSWORD", _DEV_GEAR_PASSWORD if DEBUG else None)
+
+    if not DEBUG and (SECRET_KEY is None or COMMITTEE_PASSWORD is None or GEAR_PASSWORD is None):
         raise RuntimeError(
-            "SECRET_KEY and COMMITTEE_PASSWORD must both be set via environment "
-            "variables when FLASK_DEBUG is not set. Refusing to start with a "
-            "guessable default outside local development - either set both in "
-            "your environment/.env, or set FLASK_DEBUG=1 for local dev only."
+            "SECRET_KEY, COMMITTEE_PASSWORD and GEAR_PASSWORD must all be set via "
+            "environment variables when FLASK_DEBUG is not set. Refusing to start "
+            "with a guessable default outside local development - either set them "
+            "in your environment/.env, or set FLASK_DEBUG=1 for local dev only."
         )
 
     # SQLite by default; can be swapped for Postgres etc. via DATABASE_URL.
@@ -46,6 +51,24 @@ class Config:
         _database_url = _database_url.replace("postgres://", "postgresql://", 1)
     SQLALCHEMY_DATABASE_URI = _database_url
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    # Caps request bodies (the gear register CSV upload is the only big one).
+    MAX_CONTENT_LENGTH = 2 * 1024 * 1024
+
+    # Default loan length used to pre-fill the return date on sign-out forms.
+    DEFAULT_LOAN_DAYS = int(os.environ.get("DEFAULT_LOAN_DAYS", "7"))
+
+    # Reminder emails (via Resend). With no RESEND_API_KEY, emails are kept in
+    # an in-memory outbox and logged instead of sent - fine for local dev and
+    # tests. CRON_SECRET must match the X-Cron-Secret header on the scheduled
+    # call to /tasks/send-reminders; leave it unset to disable that endpoint.
+    RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
+    MAIL_FROM = os.environ.get("MAIL_FROM", "CUMC Kit Store <kit@example.org>")
+    GEAR_SEC_EMAIL = os.environ.get("GEAR_SEC_EMAIL")
+    CRON_SECRET = os.environ.get("CRON_SECRET")
+    OVERDUE_REMINDER_EVERY_DAYS = 3
+    # Neon (like most hosted Postgres) drops idle connections; check each one
+    # before use so the first request after a quiet spell doesn't error.
+    SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True, "pool_recycle": 300}
 
     # Session cookie hardening. HttpOnly/SameSite are safe unconditionally
     # (nothing in this app needs JS to read the cookie or a cross-site POST

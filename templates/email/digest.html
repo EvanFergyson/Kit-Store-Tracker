@@ -1,0 +1,20 @@
+{% extends "email/_layout.html" %}
+{% block body %}
+  <p style="margin:0 0 16px;font-size:16px;">Overdue kit as of {{ today.strftime('%A %d %B') }}:</p>
+  <table style="width:100%;border-collapse:collapse;font-size:15px;">
+    {% for rack in racks %}
+      <tr>
+        <td style="padding:10px 0;border-top:1px solid #e5e5ea;">{{ rack.rack.name }} (whole rack)</td>
+        <td style="padding:10px 0;border-top:1px solid #e5e5ea;">{{ rack.borrower_name }}</td>
+        <td style="padding:10px 0;border-top:1px solid #e5e5ea;text-align:right;white-space:nowrap;">due {{ rack.due_date.strftime('%d %b') }}</td>
+      </tr>
+    {% endfor %}
+    {% for loan in loans %}
+      <tr>
+        <td style="padding:10px 0;border-top:1px solid #e5e5ea;">{{ loan.quantity }} &times; {{ loan.item.name }}</td>
+        <td style="padding:10px 0;border-top:1px solid #e5e5ea;">{{ loan.borrower_name }}{% if not loan.borrower_email %} <span style="color:#6e6e73;">(no email)</span>{% endif %}</td>
+        <td style="padding:10px 0;border-top:1px solid #e5e5ea;text-align:right;white-space:nowrap;">due {{ loan.due_date.strftime('%d %b') }}</td>
+      </tr>
+    {% endfor %}
+  </table>
+{% endblock %}

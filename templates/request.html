@@ -30,6 +30,22 @@
     </section>
   {% endif %}
 
+  {% if racks %}
+    <section class="card">
+      <h2>Club Trad Racks</h2>
+      <p class="empty-state">Racks go out as a complete set. Ask a committee member at a session to borrow one.</p>
+      {% for rack, available in racks %}
+        <div class="request-group">
+          <div class="request-group-header">
+            <h3 class="rack-title"><span class="rack-swatch" style="background: {{ rack.colour_hex }}"></span>{{ rack.name }}</h3>
+            {% if available %}<span class="badge badge-approved">Available</span>{% else %}<span class="badge badge-out">Unavailable</span>{% endif %}
+          </div>
+          <p class="rack-contents">{% for item in rack.items if item.active %}{{ item.quantity_total }} &times; {{ item.name }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+        </div>
+      {% endfor %}
+    </section>
+  {% endif %}
+
   <h2>Browse by Category</h2>
   {% if category_cards %}
     <div class="category-grid">
@@ -50,14 +66,17 @@
     <h2>Can't find it?</h2>
     <form method="post" action="{{ url_for('add_to_basket') }}" class="inline-form js-basket-add">
       {{ csrf_field() }}
-      <label for="custom_name">Item description</label>
-      <input type="text" id="custom_name" name="custom_name" placeholder="e.g. Bike lock">
-
-      <label for="custom_quantity">Quantity</label>
-      <div class="qty-stepper">
-        <button type="button" class="qty-step qty-step-down" aria-label="Decrease quantity">&minus;</button>
-        <input type="number" id="custom_quantity" name="quantity" min="1" value="1" inputmode="numeric">
-        <button type="button" class="qty-step qty-step-up" aria-label="Increase quantity">+</button>
+      <div>
+        <label for="custom_name">Item description</label>
+        <input type="text" id="custom_name" name="custom_name" placeholder="e.g. Bike lock">
+      </div>
+      <div>
+        <label for="custom_quantity">Quantity</label>
+        <div class="qty-stepper">
+          <button type="button" class="qty-step qty-step-down" aria-label="Decrease quantity">&minus;</button>
+          <input type="number" id="custom_quantity" name="quantity" min="1" value="1" inputmode="numeric">
+          <button type="button" class="qty-step qty-step-up" aria-label="Increase quantity">+</button>
+        </div>
       </div>
 
       <button type="submit" class="btn btn-small btn-primary">Add to List</button>

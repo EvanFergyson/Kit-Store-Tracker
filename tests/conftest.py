@@ -16,6 +16,7 @@ import pytest
 # whatever real values happen to be sitting in the ambient environment/.env.
 os.environ["SECRET_KEY"] = "test-only-secret-key"
 os.environ["COMMITTEE_PASSWORD"] = "test-only-password"
+os.environ["GEAR_PASSWORD"] = "test-only-gear-password"
 _db_fd, _db_path = tempfile.mkstemp(prefix="kitstore-test-", suffix=".db")
 os.environ["DATABASE_URL"] = f"sqlite:///{_db_path}"
 

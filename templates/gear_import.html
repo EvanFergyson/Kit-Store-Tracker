@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Import / Export{% endblock %}
+{% block content %}
+  <h1>Import / Export</h1>
+  {% include "_gear_nav.html" %}
+
+  {% if previewed %}
+    <section class="card card-action">
+      <h2>Check Before Importing</h2>
+      {% if errors %}
+        <p>{{ errors | length }} row{{ 's' if errors | length != 1 else '' }} need fixing. Nothing has been saved &mdash; correct the file and upload it again.</p>
+        <table>
+          <thead><tr><th>Line</th><th>Problem</th></tr></thead>
+          <tbody>
+            {% for line, message in errors %}<tr><td>Line {{ line }}</td><td data-label="Problem">{{ message }}</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      {% elif rows %}
+        <p>{{ rows | length }} piece{{ 's' if rows | length != 1 else '' }} ready to import. Dates marked <em>decoded</em> came from the serial &mdash; check them against the labels.</p>
+        <table>
+          <thead><tr><th>Serial</th><th>Item</th><th>Brand</th><th>Made</th><th>Condition</th></tr></thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                <td>{{ row.serial }}</td>
+                <td data-label="Item">{{ row.item.name }}</td>
+                <td{% if row.brand %} data-label="Brand"{% endif %}>{{ row.brand or '' }}</td>
+                <td data-label="Made">{{ row.manufacture_date.isoformat() if row.manufacture_date else 'Unknown' }}{% if row.manufacture_date_source == 'decoded' %} <small class="muted">decoded</small>{% endif %}</td>
+                <td{% if row.grade %} data-label="Condition"{% endif %}>{{ grades[row.grade] if row.grade else '' }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <form method="post">
+          {{ csrf_field() }}
+          <input type="hidden" name="confirm" value="1">
+          <textarea name="csv_text" hidden>{{ csv_text }}</textarea>
+          <button type="submit" class="btn btn-primary">Import {{ rows | length }} piece{{ 's' if rows | length != 1 else '' }}</button>
+        </form>
+      {% else %}
+        <p class="empty-state">That file has no rows to import.</p>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  <section class="card">
+    <h2>Import a CSV</h2>
+    <p class="empty-state">Columns: {{ columns | join(', ') }}. Only <code>item_name</code> and <code>serial</code> are required; <code>item_name</code> must match a kit item exactly. Dates can be 2021-02-14 or 14/02/2021. Leave <code>manufacture_date</code> blank to decode it from the serial where the brand allows.</p>
+    <p><a href="{{ url_for('gear_import_template') }}">Download the template</a></p>
+    <form method="post" enctype="multipart/form-data">
+      {{ csrf_field() }}
+      <label for="file">CSV file</label>
+      <input type="file" id="file" name="file" accept=".csv,text/csv" required>
+      <button type="submit" class="btn btn-primary">Check File</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Export</h2>
+    <p class="empty-state">Download the whole register, including retired pieces and each one's latest condition. Handy as a backup.</p>
+    <a class="btn btn-secondary" href="{{ url_for('gear_export') }}">Download Register CSV</a>
+  </section>
+{% endblock %}

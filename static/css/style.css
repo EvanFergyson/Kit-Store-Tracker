@@ -1,5 +1,5 @@
 :root {
-  /* The brand red is used for buttons, the header and focus rings. Text on
+  /* The brand red is used for primary actions and focus rings. Text on
      top of --color-primary needs to be white, so this is deliberately the
      darker of the two reds - white text on the brighter #ec1d25 measures
      ~4.4:1 contrast, just under the 4.5:1 WCAG AA minimum for normal text.
@@ -7,11 +7,19 @@
   --color-primary: #bc1016;
   --color-primary-dark: #8a0c10;
   --color-primary-light: #ec1d25;
-  --color-bg: #f6f7f5;
-  --color-card: #ffffff;
-  --color-border: #dde2de;
-  --color-text: #1f2622;
-  --color-muted: #5d6a63;
+  /* Monochrome palette from the Refinity reference design: white page,
+     light grey panels, near-black for text and selected states. Red is the
+     only colour, kept for primary actions. */
+  --color-bg: #ffffff;
+  --color-card: #f5f5f5;
+  --color-border: #8a8a8f; /* Gray/50 darkened just enough for 3:1 against white (WCAG 1.4.11) */
+  --color-separator: #e4e4e7;
+  --color-fill: #ebebed;
+  --color-fill-strong: #dcdcdf;
+  --color-text: #0f0f0f;
+  --color-muted: #67666b;
+  --color-placeholder: #8e8e93;
+  --color-chevron: #a9a9ae;
   --color-success: #256b40;
   /* Light tint pair for success/error backgrounds (flash messages, badges,
      the row-just-saved highlight) - one definition each instead of the same
@@ -31,126 +39,227 @@
   --color-error: #c2410c;
   --color-error-text: #9a3412;
   --color-info: #1f4e96;
-  --radius: 8px;
+  --color-info-bg: #e8effb;
+  --color-warning: #92600a;
+  --color-warning-bg: #fdf1de;
+  --radius: 12px;
+  --radius-control: 10px;
+  --tap: 44px;
+  --rail-width: 72px;
+  --tabbar-height: 60px;
+  --font: "Avenir Next", Avenir, "Nunito Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font);
+  font-weight: 500;
   background: var(--color-bg);
   color: var(--color-text);
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
 }
 
 .container {
-  max-width: 960px;
+  max-width: 1040px;
   margin: 0 auto;
   padding: 0 1.25rem;
 }
 
-.site-header {
-  /* Black rather than --color-primary red: the real crest artwork (logo.svg)
-     is drawn on a black canvas with no transparency, so a black header lets
-     it sit flush with no visible background box around it. Red stays the
-     brand colour everywhere else (buttons, links, focus rings). */
-  background: #000000;
-  color: #fff;
-}
+/* ---- App frame: left icon rail + white top bar (desktop), bottom tab bar
+   (phones). The crest artwork has a black canvas, so it sits in a black
+   rounded tile like an app icon. */
+.rail { display: none; }
+.tabbar { display: none; }
 
-.header-inner {
+.nav-icon { width: 22px; height: 22px; flex-shrink: 0; }
+
+.topbar {
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-separator);
+}
+.topbar-inner {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.9rem 1.25rem;
-  flex-wrap: wrap;
+  gap: 1.5rem;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 0.875rem 1.25rem;
 }
-
-.brand {
+.topbar-logo, .rail-logo {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  color: #fff;
-  font-weight: 700;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #000;
+}
+.topbar-logo img, .rail-logo img { width: 32px; height: auto; }
+.wordmark {
+  color: var(--color-text);
+  font-size: 1.25rem;
+  font-weight: 600;
   text-decoration: none;
-  font-size: 1.1rem;
+  white-space: nowrap;
 }
-
-.brand-logo { height: 36px; width: auto; flex-shrink: 0; }
-
-.site-header nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 1.1rem;
-}
-
-.site-header nav a {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  color: #eef3ef;
+.topbar-links { display: flex; gap: 1.25rem; margin-left: auto; }
+.topbar-links a {
+  color: var(--color-text);
+  font-size: 0.9375rem;
   text-decoration: none;
-  font-size: 0.95rem;
+  white-space: nowrap;
 }
+.topbar-links a:hover, .topbar-links a[aria-current] { text-decoration: underline; text-underline-offset: 4px; }
+.topbar-account { display: none; color: var(--color-text); }
 
-.site-header nav a:hover { text-decoration: underline; }
-
-.nav-icon { width: 16px; height: 16px; flex-shrink: 0; }
-
-/* Search box sits between the brand and the nav links in the header. Plain
-   GET form (no JS needed for it to work) submitting straight to the search
-   results page. */
-.nav-search {
-  position: relative;
-  flex: 1 1 200px;
-  max-width: 320px;
-}
-
+/* Search: an underlined field, as in the reference, rather than a box. */
+.nav-search { position: relative; flex: 1 1 320px; max-width: 420px; }
 .nav-search-icon {
   position: absolute;
-  left: 0.65rem;
+  left: 0;
   top: 50%;
   transform: translateY(-50%);
-  width: 14px;
-  height: 14px;
-  color: rgba(255, 255, 255, 0.75);
+  width: 18px;
+  height: 18px;
+  color: var(--color-text);
   pointer-events: none;
 }
-
 .nav-search input {
   width: 100%;
-  padding: 0.4rem 0.75rem 0.4rem 2rem;
+  min-height: 40px;
+  padding: 0.375rem 0 0.375rem 1.75rem;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 1rem;
+}
+.nav-search input::placeholder { color: var(--color-placeholder); }
+.nav-search input:focus { outline: none; border-bottom-color: var(--color-text); }
+
+.nav-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--color-primary);
   color: #fff;
-  font-size: 0.9rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+.nav-count[hidden] { display: none; }
+
+@media (min-width: 900px) {
+  body { padding-left: var(--rail-width); }
+  .rail {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    width: var(--rail-width);
+    padding: 0.875rem 0 1.25rem;
+    background: var(--color-bg);
+    border-right: 1px solid var(--color-text);
+  }
+  .rail-logo { margin-bottom: 1rem; }
+  .rail-link {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--tap);
+    height: var(--tap);
+    border-radius: var(--radius-control);
+    color: var(--color-muted);
+  }
+  .rail-link:hover { color: var(--color-text); background: var(--color-card); }
+  .rail-link.active { color: #fff; background: var(--color-text); }
+  .rail-link .nav-count { position: absolute; top: 2px; right: 0; }
+  .rail-spacer { flex: 1; }
+  .topbar-logo { display: none; }
 }
 
-.nav-search input::placeholder { color: rgba(255, 255, 255, 0.75); }
-.nav-search input:focus { background: #fff; color: var(--color-text); }
-.nav-search input:focus + .nav-search-icon { color: var(--color-muted); }
+@media (max-width: 899px) {
+  .wordmark, .topbar-links { display: none; }
+  .topbar-inner { gap: 0.875rem; padding: 0.625rem 1rem; }
+  .topbar-logo { width: 36px; height: 36px; }
+  .topbar-logo img { width: 28px; }
+  .nav-search { max-width: none; }
+  .topbar-account { display: flex; padding: 0.5rem; margin-right: -0.5rem; }
+  .tabbar {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 50;
+    display: flex;
+    background: var(--color-bg);
+    border-top: 1px solid var(--color-separator);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .tab {
+    position: relative;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-height: var(--tabbar-height);
+    color: var(--color-muted);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .tab.active { color: var(--color-text); }
+  .tab.active .nav-icon { stroke-width: 2.4; }
+  .tab .nav-count { position: absolute; top: 6px; left: calc(50% + 6px); }
+  body { padding-bottom: calc(var(--tabbar-height) + env(safe-area-inset-bottom)); }
+}
 
-main.container { padding-top: 1.75rem; padding-bottom: 3rem; }
+main.container { padding-top: 2.25rem; padding-bottom: 4rem; }
 
 .site-footer {
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--color-separator);
   color: var(--color-muted);
-  font-size: 0.85rem;
+  font-size: 0.8125rem;
   padding: 1.25rem 0;
   margin-top: 2rem;
 }
 
-h1 { margin-top: 0; }
-h2 { margin: 0 0 0.75rem; }
+/* Hierarchy from type scale + tight tracking rather than boxes or colour. */
+/* Type scale from the reference: H1 48 semibold, H2 32 medium, H3 24
+   semibold, H4 18 medium, body 16 medium. Hierarchy comes from size and
+   space rather than boxes or colour. */
+h1 {
+  margin: 0 0 1.5rem;
+  font-size: clamp(2rem, 1.4rem + 2.2vw, 3rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1.25;
+}
 
 .card {
   background: var(--color-card);
-  border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  padding: 1.25rem 1.5rem;
+  padding: 1.5rem;
   margin-bottom: 1.5rem;
 }
 
@@ -159,11 +268,8 @@ h2 { margin: 0 0 0.75rem; }
 /* Visual-weight variants so a page stacking several cards (e.g. Sign
    In/Out) can signal "this needs your attention" vs "this is just a log"
    without changing section order or what data lives where. */
-.card-action {
-  border-left: 4px solid var(--color-primary);
-  padding-left: calc(1.5rem - 4px);
-}
-.card-action h2 { font-weight: 800; }
+/* Used to carry a red left bar; the heading alone now does that job. */
+.card-action h2 { font-size: 1.625rem; }
 
 .card-log { padding: 0; }
 .card-log > summary {
@@ -174,7 +280,7 @@ h2 { margin: 0 0 0.75rem; }
 .card-log > summary::-webkit-details-marker { display: none; }
 .card-log > summary h2 {
   display: inline;
-  color: var(--color-muted);
+  font-size: 1.0625rem;
   font-weight: 600;
 }
 .card-log > summary::before {
@@ -186,17 +292,21 @@ h2 { margin: 0 0 0.75rem; }
 }
 .card-log[open] > summary::before { transform: rotate(90deg); }
 .card-log > *:not(summary) { padding: 0 1.5rem; }
+.card-log > p:not(summary) { margin-top: 0; }
 .card-log > *:last-child { padding-bottom: 1.25rem; }
 
-.hero { text-align: center; padding: 3rem 0; }
-.hero-actions { margin-top: 1.5rem; display: flex; gap: 0.75rem; justify-content: center; }
-.hero-note { margin-top: 0.85rem; color: var(--color-muted); font-size: 0.85rem; }
+.hero { text-align: center; padding: 4rem 0 3rem; }
+.hero h1 { font-size: clamp(2.25rem, 1.6rem + 3vw, 3.5rem); letter-spacing: -0.035em; margin-bottom: 0.75rem; }
+.hero > p:first-of-type { font-size: 1.1875rem; color: var(--color-muted); max-width: 32rem; margin: 0 auto; }
+.hero-actions { margin-top: 2rem; display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+.hero-actions .btn { margin-top: 0; }
+.hero-note { margin-top: 1rem; color: var(--color-muted); font-size: 0.875rem; }
 
 form label {
   display: block;
   font-size: 0.85rem;
   font-weight: 600;
-  margin: 0.75rem 0 0.25rem;
+  margin: 1.25rem 0 0.125rem;
   color: var(--color-muted);
 }
 
@@ -210,12 +320,33 @@ form input,
 form select,
 form textarea {
   width: 100%;
-  padding: 0.5rem 0.65rem;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  font-size: 0.95rem;
+  /* Underlined fields, as in the reference's forms. 16px minimum: anything
+     smaller makes iOS Safari zoom the page on focus. */
+  padding: 0.5rem 0;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 1rem;
   font-family: inherit;
+  font-weight: 500;
+  min-height: 40px;
 }
+
+form textarea {
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+}
+
+form input[type="radio"],
+form input[type="checkbox"] { width: auto; min-height: 0; padding: 0; accent-color: var(--color-primary); }
+form input[type="checkbox"] { width: 20px; height: 20px; }
+
+form input::placeholder, form textarea::placeholder { color: var(--color-placeholder); }
+form input:focus, form select:focus, form textarea:focus { border-color: var(--color-text); outline: none; }
+form input:focus-visible, form select:focus-visible { box-shadow: 0 1px 0 0 var(--color-text); }
 
 .inline-form {
   display: grid;
@@ -226,6 +357,7 @@ form textarea {
 
 .inline-form > div,
 .inline-form label { grid-column: span 1; }
+.inline-form > .btn { justify-self: start; }
 
 /* Small set of spacing utilities for the handful of one-off wrapper divs
    that just need extra margin and aren't worth a bespoke class - replaces
@@ -238,37 +370,46 @@ form textarea {
 .mb-lg { margin-bottom: 1.5rem; }
 
 .btn {
-  display: inline-block;
-  padding: 0.55rem 1.1rem;
-  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap);
+  padding: 0.625rem 1.25rem;
+  border-radius: 999px;
   border: none;
-  font-size: 0.95rem;
+  font-size: 1rem;
+  font-family: inherit;
   font-weight: 600;
+  line-height: 1.2;
   cursor: pointer;
   text-decoration: none;
   margin-top: 1rem;
+  transition: background-color 0.15s ease, transform 0.1s ease;
 }
 
-.btn:hover { filter: brightness(0.92); }
-.btn:active { filter: brightness(0.85); }
+.btn:active { transform: scale(0.97); }
 
+/* Filled = the one primary action on screen; tinted = everything else. */
 .btn-primary { background: var(--color-primary); color: #fff; }
-.btn-primary:hover { background: var(--color-primary-dark); filter: none; }
-.btn-secondary { background: #fff; color: var(--color-primary); border: 1px solid var(--color-primary); }
+.btn-primary:hover { background: var(--color-primary-dark); }
+.btn-secondary { background: transparent; color: var(--color-text); box-shadow: inset 0 0 0 1px var(--color-text); }
+.btn-secondary:hover { background: var(--color-card); }
 /* Used in almost every table row across the app (Approve/Deny/Save/Delete/Sign
    In/Update/Remove). Padded up from a ~28px effective height to ~40px so it
    sits much closer to the 44px "comfortable tap target" guideline - these are
    exactly the buttons committee members tap repeatedly, often on a phone. */
 .btn-small {
-  padding: 0.55rem 0.85rem;
-  font-size: 0.85rem;
+  padding: 0.5rem 0.95rem;
+  font-size: 0.875rem;
   margin-top: 0;
-  min-height: 40px;
-  display: inline-flex;
-  align-items: center;
+  min-height: 36px;
 }
 .btn-success { background: var(--color-success); color: #fff; }
-.btn-danger { background: var(--color-error); color: #fff; }
+.btn-success:hover { filter: brightness(0.9); }
+/* Destructive actions are tinted, not filled - they shouldn't out-shout the
+   action the screen is actually for. */
+.btn-danger { background: var(--color-error-bg); color: var(--color-error-text); }
+.btn-danger:hover { filter: brightness(0.96); }
 
 /* A visible, on-brand focus ring for keyboard navigation - buttons, links,
    inputs and selects all pick this up automatically. */
@@ -285,7 +426,7 @@ table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 0.75rem;
-  font-size: 0.92rem;
+  font-size: 0.9375rem;
 }
 
 /* Wraps tables with several fixed-width form controls per row (e.g. Kit
@@ -298,19 +439,24 @@ table {
 
 th, td {
   text-align: left;
-  padding: 0.5rem 0.6rem;
-  border-bottom: 1px solid var(--color-border);
+  padding: 0.75rem 0.625rem;
+  border-bottom: 1px solid var(--color-separator);
   vertical-align: middle;
 }
 
-th { color: var(--color-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; }
+th { color: var(--color-muted); font-size: 0.8125rem; font-weight: 600; padding-top: 0.25rem; padding-bottom: 0.5rem; }
+tbody tr:last-child td { border-bottom: none; }
 
 /* For a table column that's just an action button/icon with no real content
    - let it shrink to its content's width instead of sharing equally in
    whatever space is left over (e.g. Basket's Remove column). */
 .col-tight { width: 1%; white-space: nowrap; }
 
-td.actions, span.actions { display: flex; gap: 0.4rem; align-items: center; flex-shrink: 0; }
+span.actions { display: flex; gap: 0.4rem; align-items: center; flex-shrink: 0; }
+/* td.actions stays a real table cell on desktop - display:flex on a <td>
+   detaches it from the row, so its bottom border didn't line up. */
+td.actions { white-space: nowrap; }
+td.actions > * + * { margin-left: 0.25rem; }
 td.actions form, span.actions form { display: inline; }
 /* ...except a real multi-field .inline-form nested inside one of these (e.g.
    the bundle edit form inside its <details>) - that still needs its normal
@@ -335,14 +481,14 @@ span.actions .inline-form { display: grid; }
 .flash-stack { margin-bottom: 1.25rem; }
 
 .flash {
-  padding: 0.7rem 1rem;
-  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-control);
   margin-bottom: 0.5rem;
   font-size: 0.92rem;
 }
 
-.flash-success { background: var(--color-success-bg); color: var(--color-success); border: 1px solid #b9e3c6; }
-.flash-error { background: var(--color-error-bg); color: var(--color-error-text); border: 1px solid #f4c9ab; }
+.flash-success { background: var(--color-success-bg); color: var(--color-success); }
+.flash-error { background: var(--color-error-bg); color: var(--color-error-text); }
 
 .badge {
   display: inline-block;
@@ -355,10 +501,10 @@ span.actions .inline-form { display: grid; }
 
 .badge-approved { background: var(--color-success-bg); color: var(--color-success); }
 .badge-denied { background: var(--color-error-bg); color: var(--color-error-text); }
-.badge-collected { background: #e6edfb; color: var(--color-info); }
-.badge-archived { background: #eef0ee; color: var(--color-muted); }
-.badge-out { background: #fdf1de; color: #92600a; }
-.badge-group { background: #e6edfb; color: var(--color-info); text-transform: none; }
+.badge-collected { background: var(--color-info-bg); color: var(--color-info); }
+.badge-archived { background: var(--color-fill); color: var(--color-muted); }
+.badge-out { background: var(--color-warning-bg); color: var(--color-warning); }
+.badge-group { background: var(--color-info-bg); color: var(--color-info); text-transform: none; }
 
 .session-options {
   display: flex;
@@ -402,8 +548,59 @@ span.actions .inline-form { display: grid; }
 }
 
 .plain-list form { margin: 0; }
+/* Colour-coded racks: the swatch is the rack's real-world label colour. */
+.rack-title { display: flex; align-items: center; gap: 0.5rem; margin: 0; font-size: 1.0625rem; }
+.rack-swatch {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin-right: 0.375rem;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+  vertical-align: -2px;
+}
+.rack-title .rack-swatch { margin-right: 0; }
+.rack-contents { color: var(--color-muted); font-size: 0.9375rem; margin: 0.25rem 0 0.75rem; }
+small.muted, .muted { color: var(--color-muted); }
+h2 small { font-size: 0.875rem; font-weight: 500; letter-spacing: 0; margin-left: 0.25rem; }
 
-h3 { font-size: 1rem; margin: 0 0 0.5rem; }
+/* Gear register */
+.grade-good { background: var(--color-success-bg); color: var(--color-success); }
+.grade-minor_wear { background: var(--color-fill); color: var(--color-text); }
+.grade-needs_attention { background: var(--color-warning-bg); color: var(--color-warning); }
+.grade-retire { background: var(--color-error-bg); color: var(--color-error-text); }
+.detail-list { display: grid; grid-template-columns: max-content 1fr; gap: 0.5rem 1.25rem; margin: 0 0 1rem; }
+.detail-list dt { color: var(--color-muted); }
+.detail-list dd { margin: 0; }
+.grade-options { border: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.5rem; }
+.grade-options legend { font-size: 0.85rem; font-weight: 600; margin-bottom: 0.375rem; padding: 0; }
+.grade-option, .check-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: var(--tap);
+  margin: 0;
+  padding: 0 0.875rem;
+  border-radius: var(--radius-control);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.check-option { margin-top: 0.75rem; background: transparent; padding: 0; }
+.check-option[hidden] { display: none; }
+.input-narrow { max-width: 6rem; }
+.row-link { color: var(--color-primary); font-weight: 600; text-decoration: none; }
+.row-link:hover { text-decoration: underline; }
+a.filter-chip { display: inline-flex; align-items: center; text-decoration: none; }
+.subnav-form { display: contents; }
+button.admin-subnav-link { border: none; cursor: pointer; font-family: inherit; }
+
+.plain-list small.muted { color: var(--color-muted); margin-left: 0.25rem; }
+
+h3 { font-size: 1.125rem; font-weight: 600; margin: 0 0 0.5rem; }
 
 .basket-add-form {
   display: flex;
@@ -418,17 +615,20 @@ h3 { font-size: 1rem; margin: 0 0 0.5rem; }
 .qty-stepper {
   display: inline-flex;
   align-items: stretch;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
+  background: var(--color-bg);
+  box-shadow: inset 0 0 0 1px var(--color-border);
+  border-radius: 999px;
   overflow: hidden;
   flex-shrink: 0;
 }
 
 .qty-stepper input {
   width: 2.75rem;
+  min-height: 0;
   border: none;
-  border-left: 1px solid var(--color-border);
-  border-right: 1px solid var(--color-border);
+  background: transparent;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   border-radius: 0;
   text-align: center;
   padding: 0.4rem 0.25rem;
@@ -443,23 +643,23 @@ h3 { font-size: 1rem; margin: 0 0 0.5rem; }
 
 .qty-step {
   border: none;
-  background: var(--color-bg);
+  background: transparent;
   color: var(--color-text);
-  font-size: 1.1rem;
-  font-weight: 700;
+  font-size: 1.125rem;
+  font-weight: 600;
   line-height: 1;
-  width: 2.1rem;
-  min-height: 2.1rem;
+  width: 2.25rem;
+  min-height: 2.25rem;
   cursor: pointer;
   padding: 0;
 }
 
-.qty-step:hover { background: var(--color-border); }
+.qty-step:hover { background: var(--color-card); }
 
 .request-group {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  padding: 1rem 1.1rem;
+  background: var(--color-bg);
+  border-radius: var(--radius-control);
+  padding: 1rem 1.125rem;
   margin-bottom: 1rem;
 }
 
@@ -496,8 +696,7 @@ h3 { font-size: 1rem; margin: 0 0 0.5rem; }
 .sign-out-group-form {
   margin-top: 0.6rem;
   padding: 0.75rem;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: var(--color-bg);
   min-width: 240px;
 }
@@ -532,6 +731,7 @@ h3 { font-size: 1rem; margin: 0 0 0.5rem; }
 }
 
 .sign-out-item-form input[type="text"] { width: auto; min-width: 8rem; }
+.sign-out-item-form input[type="date"] { width: auto; }
 /* No width rule for the quantity input - see the comment above
    .sign-out-group-row, same reasoning (now wrapped in .qty-stepper). */
 
@@ -569,9 +769,10 @@ tbody tr:hover { background: var(--color-bg); }
 }
 
 .toast {
-  padding: 0.7rem 1rem;
-  border-radius: 6px;
-  font-size: 0.9rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-control);
+  font-size: 0.9375rem;
+  font-weight: 500;
   color: #fff;
   background: var(--color-text);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
@@ -596,18 +797,22 @@ tbody tr:hover { background: var(--color-bg); }
 }
 
 .admin-subnav-link {
-  padding: 0.4rem 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0.4rem 0.95rem;
   border-radius: 999px;
-  background: var(--color-card);
-  border: 1px solid var(--color-border);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--color-border);
   color: var(--color-text);
   text-decoration: none;
-  font-size: 0.88rem;
-  font-weight: 600;
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 
-.admin-subnav-link:hover { background: var(--color-bg); }
-.admin-subnav-link.active { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+.admin-subnav-link:hover { box-shadow: inset 0 0 0 1px var(--color-text); }
+/* Selection is shown in neutral dark, keeping red for actions. */
+.admin-subnav-link.active { background: var(--color-text); box-shadow: none; color: #fff; }
 
 /* Filter chips: a row of tappable buttons for picking one subcategory,
    instead of a <select> dropdown - every option is visible and one click
@@ -622,18 +827,20 @@ tbody tr:hover { background: var(--color-bg); }
 }
 
 .filter-chip {
-  padding: 0.4rem 0.85rem;
+  min-height: 36px;
+  padding: 0.4rem 0.95rem;
   border-radius: 999px;
-  background: var(--color-card);
+  background: transparent;
   border: 1px solid var(--color-border);
   color: var(--color-text);
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
   cursor: pointer;
 }
 
-.filter-chip:hover { background: var(--color-bg); }
-.filter-chip.active { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+.filter-chip:hover { border-color: var(--color-text); }
+.filter-chip.active { background: var(--color-text); border-color: var(--color-text); color: #fff; }
 
 /* Category cards used to browse the kit store by category (both the member
    request page and the admin inventory page), instead of one long combined
@@ -646,19 +853,36 @@ tbody tr:hover { background: var(--color-bg); }
 }
 
 .category-card {
+  position: relative;
   display: block;
-  border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  padding: 1rem 1.1rem;
+  padding: 1.125rem 2.5rem 1.125rem 1.25rem;
   text-decoration: none;
   color: var(--color-text);
   background: var(--color-card);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  border: 1px solid transparent;
+  transition: box-shadow 0.2s ease, transform 0.1s ease;
 }
 
-.category-card:hover { border-color: var(--color-primary); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06); }
-.category-card h3 { margin: 0 0 0.35rem; font-size: 1.05rem; }
-.category-card .count { color: var(--color-muted); font-size: 0.85rem; }
+/* The chevron says "this opens a list" - Apple's cue for a navigation row. */
+.category-card::after {
+  content: "";
+  position: absolute;
+  right: 1.25rem;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid var(--color-chevron);
+  border-right: 2px solid var(--color-chevron);
+  transform: translateY(-50%) rotate(45deg);
+}
+
+.category-card:hover { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08); }
+.category-card:active { transform: scale(0.99); }
+.category-card h3 { margin: 0 0 0.25rem; font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; }
+.category-card .count { color: var(--color-muted); font-size: 0.875rem; }
+/* Inside a white card the white tiles need a grey surface to read as tiles. */
+.card .category-card { background: var(--color-bg); }
 
 /* Small navigation cards on the admin dashboard, linking out to each
    management page with a live count so the dashboard itself stays a quick
@@ -672,18 +896,24 @@ tbody tr:hover { background: var(--color-bg); }
 
 .dashboard-link-card {
   display: block;
-  border: 1px solid var(--color-border);
   border-radius: var(--radius);
-  padding: 1rem 1.1rem;
+  padding: 1.125rem 1.25rem;
   text-decoration: none;
   background: var(--color-card);
   color: var(--color-text);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: box-shadow 0.2s ease, transform 0.1s ease;
 }
 
-.dashboard-link-card:hover { border-color: var(--color-primary); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06); }
-.dashboard-link-card .count { display: block; font-size: 1.5rem; font-weight: 700; color: var(--color-primary); }
-.dashboard-link-card .label { color: var(--color-muted); font-size: 0.85rem; }
+.dashboard-link-card:hover { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08); }
+.dashboard-link-card:active { transform: scale(0.99); }
+.dashboard-link-card .count {
+  display: block;
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.dashboard-link-card .label { color: var(--color-muted); font-size: 0.875rem; }
 
 .back-link {
   display: inline-block;
@@ -697,30 +927,49 @@ tbody tr:hover { background: var(--color-bg); }
 .back-link:hover { text-decoration: underline; }
 
 @media (max-width: 600px) {
-  .toast-container { left: 1rem; right: 1rem; max-width: none; }
-  .header-inner { flex-direction: column; gap: 0.5rem; align-items: stretch; padding: 0.6rem 1rem; }
-  /* Text labels ("Request Kit", "CUMC Kit Store", etc.) are what actually
-     made the mobile header tall - 5 nav links each with an icon + word
-     wrapped across 2-3 full-width lines, stacked under the brand row and
-     search row. Icons alone (with aria-label/title still present for
-     screen readers) fit every link on one compact row instead. */
-  .brand { font-size: 0; gap: 0.4rem; }
-  .brand-logo { height: 28px; }
-  .site-header nav { gap: 0.9rem; }
-  .site-header nav a { font-size: 0; gap: 0; }
-  .nav-icon { width: 22px; height: 22px; }
-  #basket-count-badge { font-size: 0.7rem; }
+  .toast-container { left: 1rem; right: 1rem; max-width: none; bottom: calc(var(--tabbar-height) + 1rem + env(safe-area-inset-bottom)); }
   table, thead, tbody, th, td, tr { display: block; }
   thead { display: none; }
-  td { border: none; padding: 0.25rem 0; }
+  td { border: none; padding: 0.125rem 0; }
+  /* The first cell is the row's name - make it read as the row title. */
+  td:first-child { font-weight: 600; font-size: 1.0625rem; padding-bottom: 0.25rem; }
   /* Once thead is hidden, a bare number (e.g. Kit Inventory's Available/Total
      columns) has no label left to explain what it means - restore it from the
      data-label attribute set on the cell in the template. */
   td[data-label]::before {
-    content: attr(data-label) ": ";
-    font-weight: 600;
+    content: attr(data-label);
+    margin-right: 0.375rem;
     color: var(--color-muted);
   }
-  tr { padding-bottom: 0.75rem; border-bottom: 1px solid var(--color-border); }
+  tr { padding: 0.875rem 0; border-bottom: 1px solid var(--color-separator); }
+  tbody tr:last-child { border-bottom: none; }
+  td.actions { padding-top: 0.5rem; }
+  .card { padding: 1.125rem 1rem; border-radius: 12px; }
+  .card-log { padding: 0; }
+  .card-log > summary { padding: 1.125rem 1rem; }
+  .card-log > *:not(summary) { padding: 0 1rem; }
+  .btn-small { min-height: var(--tap); padding: 0.5rem 1.1rem; font-size: 0.9375rem; }
+  .qty-step { width: var(--tap); min-height: var(--tap); }
+  .admin-subnav-link, .filter-chip { min-height: 40px; }
   .two-col { grid-template-columns: 1fr; }
+  .admin-subnav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    margin-left: -1.25rem;
+    margin-right: -1.25rem;
+    padding: 0 1.25rem 0.25rem;
+  }
+  .admin-subnav::-webkit-scrollbar { display: none; }
+  .admin-subnav-link { flex-shrink: 0; white-space: nowrap; }
+  td:empty { display: none; }
+  td.actions { display: flex; gap: 0.4rem; align-items: center; white-space: normal; }
+  td.actions > * + * { margin-left: 0; }
+  .sign-out-group-form { min-width: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+  .btn:active, .category-card:active, .dashboard-link-card:active { transform: none; }
 }
