@@ -363,6 +363,9 @@ class EmailLog(db.Model):
     kind = db.Column(db.String(20), nullable=False)  # receipt / day_before / overdue / digest
     signout_id = db.Column(db.Integer, db.ForeignKey("sign_outs.id"), nullable=True)
     recipient = db.Column(db.String(200), nullable=False)
+    # "sent", or "rejected" when Resend refused the recipient address - logged
+    # either way so a bad address isn't retried on every hourly run.
+    status = db.Column(db.String(10), nullable=True, default="sent")
     sent_on = db.Column(db.Date, nullable=False)
     sent_at = db.Column(db.DateTime, default=utcnow)
 

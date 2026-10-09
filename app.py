@@ -1,4 +1,5 @@
 import csv
+import http.client
 import io
 import json
 import os
@@ -33,7 +34,7 @@ from sqlalchemy.schema import CreateColumn
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 import serial_dates
-from config import Config
+from config import Config, clean_value
 from models import (
     ACTION_GRADES,
     INSPECTION_GRADES,
@@ -215,6 +216,7 @@ def _ensure_schema():
     _add_missing_columns(KitItem, ["rack_id"])
     _add_missing_columns(Subcategory, ["track_serials", "max_age_years"])
     _add_missing_columns(SignOut, ["rack_loan_id", "due_date", "borrower_email"])
+    _add_missing_columns(EmailLog, ["status"])
 
     # Case-insensitive uniqueness backstop matching the app-level
     # _name_exists() checks - those do a SELECT then a separate INSERT/
@@ -810,24 +812,28 @@ OUTBOX = []
 RESEND_URL = "https://api.resend.com/emails"
 
 
+# send_email outcomes. "rejected" means Resend refused this recipient, so
+# retrying won't help; anything else that fails is worth retrying later.
+SENT, RETRY, REJECTED = "sent", "retry", "rejected"
+
+
 def send_email(to, subject, html):
-    """Send one email via Resend; returns True on success. Never raises -
-    a failed reminder is logged and retried on the next run."""
+    """Send one email via Resend and return SENT, RETRY or REJECTED. Never
+    raises: one bad email mustn't abort the rest of a reminder run."""
     config = current_app.config
+    if not EMAIL_RE.match(to or ""):
+        current_app.logger.warning("Email not sent: %r isn't a valid address", to)
+        return REJECTED
     if not config.get("RESEND_API_KEY"):
         OUTBOX.append({"to": to, "subject": subject, "html": html})
         current_app.logger.info("Email not sent (no RESEND_API_KEY) to %s: %s", to, subject)
-        return True
-    # Env var values pasted into Render can carry quotes or a trailing
-    # newline, which Resend rejects as an invalid "from".
-    sender = (config.get("MAIL_FROM") or "").strip().strip("\"'").strip()
-    message = {"from": sender, "to": [to], "subject": subject, "html": html}
+        return SENT
+    message = {"from": config["MAIL_FROM"], "to": [to], "subject": subject, "html": html}
     if config.get("MAIL_REPLY_TO"):
         message["reply_to"] = config["MAIL_REPLY_TO"]
-    payload = json.dumps(message).encode()
     req = urllib.request.Request(
         RESEND_URL,
-        data=payload,
+        data=json.dumps(message).encode(),
         method="POST",
         headers={
             "Authorization": f"Bearer {config['RESEND_API_KEY']}",
@@ -837,15 +843,22 @@ def send_email(to, subject, html):
     )
     try:
         with urllib.request.urlopen(req, timeout=10) as response:
-            return 200 <= response.status < 300
+            return SENT if 200 <= response.status < 300 else RETRY
     except urllib.error.HTTPError as error:
         # Resend explains rejections in the body (e.g. an invalid "from").
-        detail = error.read().decode("utf-8", "replace")[:500]
+        try:
+            detail = error.read().decode("utf-8", "replace")[:500]
+        except (OSError, http.client.HTTPException):
+            detail = "(couldn't read Resend's response)"
         current_app.logger.warning("Email to %s rejected by Resend (%s): %s", to, error.code, detail)
-        return False
-    except (urllib.error.URLError, TimeoutError) as error:
+        # Only a complaint about the recipient is permanent; a bad "from",
+        # API key or rate limit is fixed on our side, so keep retrying.
+        return REJECTED if error.code == 422 and "`to`" in detail else RETRY
+    except (OSError, ValueError, http.client.HTTPException) as error:
+        # OSError covers URLError, timeouts and dropped connections;
+        # ValueError an invalid header value (e.g. a mangled API key).
         current_app.logger.warning("Email to %s failed: %s", to, error)
-        return False
+        return RETRY
 
 
 def _london_today():
@@ -866,11 +879,13 @@ def _send_loan_emails(kind, loans, today, subject, intro):
         html = render_template(
             "email/loans.html", intro=intro, loans=borrower_loans, name=borrower_loans[0].borrower_name, today=today
         )
-        if send_email(email, subject, html):
-            sent += 1
-            for loan in borrower_loans:
-                db.session.add(EmailLog(kind=kind, signout_id=loan.id, recipient=email, sent_on=today))
-            db.session.commit()
+        outcome = send_email(email, subject, html)
+        if outcome == RETRY:
+            continue
+        sent += outcome == SENT
+        for loan in borrower_loans:
+            db.session.add(EmailLog(kind=kind, signout_id=loan.id, recipient=email, status=outcome, sent_on=today))
+        db.session.commit()
     return sent
 
 
@@ -930,10 +945,11 @@ def run_reminders(today):
         ).all()
         if overdue_loans or overdue_racks:
             html = render_template("email/digest.html", loans=overdue_loans, racks=overdue_racks, today=today)
-            if send_email(digest_to, f"Overdue kit: {len(overdue_loans) + len(overdue_racks)} loan(s)", html):
-                db.session.add(EmailLog(kind="digest", recipient=digest_to, sent_on=today))
+            outcome = send_email(digest_to, f"Overdue kit: {len(overdue_loans) + len(overdue_racks)} loan(s)", html)
+            if outcome != RETRY:
+                db.session.add(EmailLog(kind="digest", recipient=digest_to, status=outcome, sent_on=today))
                 db.session.commit()
-                counts["digest"] = 1
+                counts["digest"] = int(outcome == SENT)
     return counts
 
 
@@ -2410,16 +2426,15 @@ def register_routes(app):
     @csrf.exempt
     def send_reminders_task():
         """Called hourly by an external cron with the X-Cron-Secret header."""
-        # Strip whitespace and quotes from both sides: a secret pasted into
-        # Render or the cron service often picks up a stray space or newline.
-        secret = (app.config.get("CRON_SECRET") or "").strip().strip("\"'")
+        secret = app.config.get("CRON_SECRET")  # already cleaned by config.py
         if not secret:
             abort(404)
         provided = request.headers.get("X-Cron-Secret")
         if provided is None:
             app.logger.warning("send-reminders refused: no X-Cron-Secret header sent")
             abort(403)
-        if not secrets.compare_digest(provided.strip().strip("\"'"), secret):
+        # Same tidying as config.py, for a secret pasted into the cron service.
+        if not secrets.compare_digest(clean_value(provided), secret):
             app.logger.warning("send-reminders refused: X-Cron-Secret doesn't match CRON_SECRET")
             abort(403)
         return run_reminders(_london_today())

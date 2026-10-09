@@ -8,6 +8,7 @@ import pytest
 from conftest import get_csrf_token, login
 
 import app as app_module
+import config as config_module
 from models import Category, EmailLog, ItemRequest, KitItem, SignOut, Subcategory, db
 
 TODAY = date(2030, 6, 5)  # a Wednesday
@@ -107,51 +108,144 @@ def test_returned_kit_gets_no_reminders(app, item):
     assert _sent("sam@example.com") == []
 
 
-def test_loans_without_email_only_appear_in_monday_digest(app, item):
-    app.config["GEAR_SEC_EMAIL"] = "gear@example.com"
-    try:
-        _loan(app, item, TODAY - timedelta(days=4), email=None, name="Walk-in Wes")
-        _run(app, TODAY)
-        assert _sent("gear@example.com") == []  # not Monday
-        _run(app, MONDAY)
-        _run(app, MONDAY)
-        digests = _sent("gear@example.com", "Overdue kit")
-        assert len(digests) == 1 and "Walk-in Wes" in digests[0]["html"] and "(no email)" in digests[0]["html"]
-        assert len(app_module.OUTBOX) == 1
-    finally:
-        app.config["GEAR_SEC_EMAIL"] = None
+def test_loans_without_email_only_appear_in_monday_digest(app, item, monkeypatch):
+    monkeypatch.setitem(app.config, "GEAR_SEC_EMAIL", "gear@example.com")
+    _loan(app, item, TODAY - timedelta(days=4), email=None, name="Walk-in Wes")
+    _run(app, TODAY)
+    assert _sent("gear@example.com") == []  # not Monday
+    _run(app, MONDAY)
+    _run(app, MONDAY)
+    digests = _sent("gear@example.com", "Overdue kit")
+    assert len(digests) == 1 and "Walk-in Wes" in digests[0]["html"] and "(no email)" in digests[0]["html"]
+    assert len(app_module.OUTBOX) == 1
 
 
-def test_resend_request_shape(app, item, monkeypatch):
-    captured = {}
+def test_invalid_address_is_logged_once_not_retried_hourly(app, item):
+    loan_id = _loan(app, item, TODAY + timedelta(days=7), email="sam@example")
+    _run(app, TODAY)
+    _run(app, TODAY)
+    assert _sent("sam@example") == []
+    with app.app_context():
+        logs = EmailLog.query.filter_by(signout_id=loan_id).all()
+        assert [(log.kind, log.status) for log in logs] == [("receipt", "rejected")]
 
-    class FakeResponse:
-        status = 200
 
-        def __enter__(self):
-            return self
+# --- talking to Resend ----------------------------------------------------------
 
-        def __exit__(self, *exc):
-            return False
+class FakeResponse:
+    status = 200
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+@pytest.fixture()
+def resend(app, monkeypatch):
+    """Point send_email at a fake Resend; returns a dict of what was sent."""
+    monkeypatch.setitem(app.config, "RESEND_API_KEY", "re_test")
+    monkeypatch.setitem(app.config, "MAIL_FROM", "CUMC Kit Store <reminders@cumc.co.uk>")
+    captured = {"respond": lambda req: FakeResponse()}
 
     def fake_urlopen(req, timeout):
         captured["url"], captured["headers"] = req.full_url, dict(req.header_items())
         captured["body"] = json.loads(req.data)
-        return FakeResponse()
+        return captured["respond"](req)
 
     monkeypatch.setattr(app_module.urllib.request, "urlopen", fake_urlopen)
-    app.config["RESEND_API_KEY"] = "re_test"
-    app.config["MAIL_REPLY_TO"] = "gear@example.com"
-    try:
-        with app.app_context():
-            assert app_module.send_email("sam@example.com", "Hello", "<p>Hi</p>")
-    finally:
-        app.config["RESEND_API_KEY"] = None
-        app.config["MAIL_REPLY_TO"] = None
-    assert captured["url"] == "https://api.resend.com/emails"
-    assert captured["headers"]["Authorization"] == "Bearer re_test"
-    assert captured["body"]["to"] == ["sam@example.com"] and captured["body"]["subject"] == "Hello"
-    assert captured["body"]["reply_to"] == "gear@example.com"
+    return captured
+
+
+def _send(app):
+    with app.app_context():
+        return app_module.send_email("sam@example.com", "Hello", "<p>Hi</p>")
+
+
+def _http_error(req, code, body):
+    return app_module.urllib.error.HTTPError(req.full_url, code, "error", {}, io.BytesIO(body))
+
+
+def test_resend_request_shape(app, resend, monkeypatch):
+    monkeypatch.setitem(app.config, "MAIL_REPLY_TO", "gear@example.com")
+    assert _send(app) == app_module.SENT
+    assert resend["url"] == "https://api.resend.com/emails"
+    assert resend["headers"]["Authorization"] == "Bearer re_test"
+    assert resend["body"]["from"] == "CUMC Kit Store <reminders@cumc.co.uk>"
+    assert resend["body"]["to"] == ["sam@example.com"] and resend["body"]["subject"] == "Hello"
+    assert resend["body"]["reply_to"] == "gear@example.com"
+
+
+def test_recipient_rejection_is_permanent_and_logged(app, resend, caplog):
+    def reject(req):
+        raise _http_error(req, 422, b'{"message":"Invalid `to` field."}')
+
+    resend["respond"] = reject
+    assert _send(app) == app_module.REJECTED
+    assert "422" in caplog.text and "Invalid `to` field" in caplog.text
+
+
+def test_sender_rejection_is_retried(app, resend):
+    def reject(req):
+        raise _http_error(req, 422, b'{"message":"Invalid `from` field."}')
+
+    resend["respond"] = reject
+    assert _send(app) == app_module.RETRY  # our config is wrong, not the recipient
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ConnectionResetError("reset"),
+        TimeoutError("timed out"),
+        app_module.http.client.RemoteDisconnected("gone"),
+        app_module.http.client.IncompleteRead(b""),
+        ValueError("Invalid header value"),
+    ],
+)
+def test_network_and_header_errors_never_escape(app, resend, error):
+    def fail(req):
+        raise error
+
+    resend["respond"] = fail
+    assert _send(app) == app_module.RETRY
+
+
+def test_unreadable_error_body_never_escapes(app, resend):
+    class BrokenBody(io.BytesIO):
+        def read(self, *args):
+            raise ConnectionResetError("reset mid-read")
+
+    def fail(req):
+        raise app_module.urllib.error.HTTPError(req.full_url, 500, "error", {}, BrokenBody())
+
+    resend["respond"] = fail
+    assert _send(app) == app_module.RETRY
+
+
+# --- cleaning pasted settings ------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "raw, cleaned",
+    [
+        ('"CUMC Kit Store <reminders@cumc.co.uk>"', "CUMC Kit Store <reminders@cumc.co.uk>"),
+        ('"CUMC Kit Store" <reminders@cumc.co.uk>', '"CUMC Kit Store" <reminders@cumc.co.uk>'),  # valid, kept
+        ("re_abc123\n", "re_abc123"),
+        ("  'gear@cumc.co.uk' ", "gear@cumc.co.uk"),
+        ('""', ""),
+        (None, ""),
+    ],
+)
+def test_clean_value(raw, cleaned):
+    assert config_module.clean_value(raw) == cleaned
+
+
+def test_blank_or_quotes_only_setting_falls_back_to_default(monkeypatch):
+    monkeypatch.setenv("MAIL_FROM", '""')
+    assert config_module._env("MAIL_FROM", "default") == "default"
+    monkeypatch.setenv("MAIL_FROM", "   ")
+    assert config_module._env("MAIL_FROM", "default") == "default"
 
 
 # --- endpoint ----------------------------------------------------------------
@@ -160,24 +254,18 @@ def test_cron_endpoint_disabled_without_secret(client):
     assert client.post("/tasks/send-reminders").status_code == 404
 
 
-def test_cron_endpoint_checks_secret(client, app, item):
-    app.config["CRON_SECRET"] = "s3cret"
-    try:
-        assert client.post("/tasks/send-reminders", headers={"X-Cron-Secret": "wrong"}).status_code == 403
-        assert client.post("/tasks/send-reminders").status_code == 403
-        response = client.post("/tasks/send-reminders", headers={"X-Cron-Secret": "s3cret"})
-        assert response.status_code == 200 and set(response.get_json()) == {"receipt", "day_before", "overdue", "digest"}
-    finally:
-        app.config["CRON_SECRET"] = None
+def test_cron_endpoint_checks_secret(client, app, item, monkeypatch):
+    monkeypatch.setitem(app.config, "CRON_SECRET", "s3cret")
+    assert client.post("/tasks/send-reminders", headers={"X-Cron-Secret": "wrong"}).status_code == 403
+    assert client.post("/tasks/send-reminders").status_code == 403
+    response = client.post("/tasks/send-reminders", headers={"X-Cron-Secret": "s3cret"})
+    assert response.status_code == 200 and set(response.get_json()) == {"receipt", "day_before", "overdue", "digest"}
 
 
-@pytest.mark.parametrize("configured, sent", [("s3cret\n", "s3cret"), ('"s3cret"', "s3cret"), ("s3cret", " s3cret ")])
-def test_cron_secret_ignores_stray_whitespace_and_quotes(client, app, item, configured, sent):
-    app.config["CRON_SECRET"] = configured
-    try:
-        assert client.post("/tasks/send-reminders", headers={"X-Cron-Secret": sent}).status_code == 200
-    finally:
-        app.config["CRON_SECRET"] = None
+@pytest.mark.parametrize("sent", [" s3cret ", '"s3cret"', "'s3cret'"])
+def test_cron_secret_header_tolerates_paste_mistakes(client, app, item, monkeypatch, sent):
+    monkeypatch.setitem(app.config, "CRON_SECRET", "s3cret")
+    assert client.post("/tasks/send-reminders", headers={"X-Cron-Secret": sent}).status_code == 200
 
 
 # --- due dates on forms ----------------------------------------------------------
@@ -223,23 +311,3 @@ def test_request_requires_email(client, item):
         follow_redirects=True,
     )
     assert b"Please enter your email" in response.data
-
-
-def test_mail_from_tolerates_quotes_and_logs_resend_errors(app, monkeypatch, caplog):
-    sent = {}
-
-    def fake_urlopen(req, timeout):
-        sent["from"] = json.loads(req.data)["from"]
-        raise app_module.urllib.error.HTTPError(
-            req.full_url, 422, "Unprocessable", {}, io.BytesIO(b'{"name":"validation_error","message":"Invalid from"}')
-        )
-
-    monkeypatch.setattr(app_module.urllib.request, "urlopen", fake_urlopen)
-    app.config.update(RESEND_API_KEY="re_test", MAIL_FROM='"CUMC Kit Store <reminders@cumc.co.uk>"\n')
-    try:
-        with app.app_context():
-            assert app_module.send_email("sam@example.com", "Hello", "<p>Hi</p>") is False
-    finally:
-        app.config.update(RESEND_API_KEY=None, MAIL_FROM="CUMC Kit Store <kit@example.org>")
-    assert sent["from"] == "CUMC Kit Store <reminders@cumc.co.uk>"
-    assert "Invalid from" in caplog.text and "422" in caplog.text
