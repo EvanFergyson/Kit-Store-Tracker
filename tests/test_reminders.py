@@ -163,8 +163,18 @@ def test_cron_endpoint_checks_secret(client, app, item):
     app.config["CRON_SECRET"] = "s3cret"
     try:
         assert client.post("/tasks/send-reminders", headers={"X-Cron-Secret": "wrong"}).status_code == 403
+        assert client.post("/tasks/send-reminders").status_code == 403
         response = client.post("/tasks/send-reminders", headers={"X-Cron-Secret": "s3cret"})
         assert response.status_code == 200 and set(response.get_json()) == {"receipt", "day_before", "overdue", "digest"}
+    finally:
+        app.config["CRON_SECRET"] = None
+
+
+@pytest.mark.parametrize("configured, sent", [("s3cret\n", "s3cret"), ('"s3cret"', "s3cret"), ("s3cret", " s3cret ")])
+def test_cron_secret_ignores_stray_whitespace_and_quotes(client, app, item, configured, sent):
+    app.config["CRON_SECRET"] = configured
+    try:
+        assert client.post("/tasks/send-reminders", headers={"X-Cron-Secret": sent}).status_code == 200
     finally:
         app.config["CRON_SECRET"] = None
 

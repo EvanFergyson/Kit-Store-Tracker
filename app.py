@@ -2402,10 +2402,17 @@ def register_routes(app):
     @csrf.exempt
     def send_reminders_task():
         """Called hourly by an external cron with the X-Cron-Secret header."""
-        secret = app.config.get("CRON_SECRET")
+        # Strip whitespace and quotes from both sides: a secret pasted into
+        # Render or the cron service often picks up a stray space or newline.
+        secret = (app.config.get("CRON_SECRET") or "").strip().strip("\"'")
         if not secret:
             abort(404)
-        if not secrets.compare_digest(request.headers.get("X-Cron-Secret", ""), secret):
+        provided = request.headers.get("X-Cron-Secret")
+        if provided is None:
+            app.logger.warning("send-reminders refused: no X-Cron-Secret header sent")
+            abort(403)
+        if not secrets.compare_digest(provided.strip().strip("\"'"), secret):
+            app.logger.warning("send-reminders refused: X-Cron-Secret doesn't match CRON_SECRET")
             abort(403)
         return run_reminders(_london_today())
 
