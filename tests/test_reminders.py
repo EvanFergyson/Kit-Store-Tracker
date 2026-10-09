@@ -1,5 +1,6 @@
 """Due dates and reminder emails: each kind sent once per rule, grouped per
 borrower, the Monday digest, the cron endpoint's secret, and the Resend call."""
+import io
 import json
 from datetime import date, datetime, timedelta
 
@@ -222,3 +223,23 @@ def test_request_requires_email(client, item):
         follow_redirects=True,
     )
     assert b"Please enter your email" in response.data
+
+
+def test_mail_from_tolerates_quotes_and_logs_resend_errors(app, monkeypatch, caplog):
+    sent = {}
+
+    def fake_urlopen(req, timeout):
+        sent["from"] = json.loads(req.data)["from"]
+        raise app_module.urllib.error.HTTPError(
+            req.full_url, 422, "Unprocessable", {}, io.BytesIO(b'{"name":"validation_error","message":"Invalid from"}')
+        )
+
+    monkeypatch.setattr(app_module.urllib.request, "urlopen", fake_urlopen)
+    app.config.update(RESEND_API_KEY="re_test", MAIL_FROM='"CUMC Kit Store <reminders@cumc.co.uk>"\n')
+    try:
+        with app.app_context():
+            assert app_module.send_email("sam@example.com", "Hello", "<p>Hi</p>") is False
+    finally:
+        app.config.update(RESEND_API_KEY=None, MAIL_FROM="CUMC Kit Store <kit@example.org>")
+    assert sent["from"] == "CUMC Kit Store <reminders@cumc.co.uk>"
+    assert "Invalid from" in caplog.text and "422" in caplog.text

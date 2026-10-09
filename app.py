@@ -818,7 +818,10 @@ def send_email(to, subject, html):
         OUTBOX.append({"to": to, "subject": subject, "html": html})
         current_app.logger.info("Email not sent (no RESEND_API_KEY) to %s: %s", to, subject)
         return True
-    message = {"from": config["MAIL_FROM"], "to": [to], "subject": subject, "html": html}
+    # Env var values pasted into Render can carry quotes or a trailing
+    # newline, which Resend rejects as an invalid "from".
+    sender = (config.get("MAIL_FROM") or "").strip().strip("\"'").strip()
+    message = {"from": sender, "to": [to], "subject": subject, "html": html}
     if config.get("MAIL_REPLY_TO"):
         message["reply_to"] = config["MAIL_REPLY_TO"]
     payload = json.dumps(message).encode()
@@ -835,6 +838,11 @@ def send_email(to, subject, html):
     try:
         with urllib.request.urlopen(req, timeout=10) as response:
             return 200 <= response.status < 300
+    except urllib.error.HTTPError as error:
+        # Resend explains rejections in the body (e.g. an invalid "from").
+        detail = error.read().decode("utf-8", "replace")[:500]
+        current_app.logger.warning("Email to %s rejected by Resend (%s): %s", to, error.code, detail)
+        return False
     except (urllib.error.URLError, TimeoutError) as error:
         current_app.logger.warning("Email to %s failed: %s", to, error)
         return False
