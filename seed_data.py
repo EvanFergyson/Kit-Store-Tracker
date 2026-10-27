@@ -16,7 +16,7 @@ Run with:  python seed_data.py
 
 from datetime import datetime
 
-from app import create_app
+from app import apply_ppe_defaults, create_app
 from models import Category, ItemGroup, KitBundle, KitBundleLine, KitItem, SignOut, Subcategory, db, utcnow
 
 # category name -> list of subcategory names, in the order the club's
@@ -580,11 +580,15 @@ def run():
                 bundle_lines_added += 1
         db.session.commit()
 
+        ppe_tracked = apply_ppe_defaults()
+        db.session.commit()
+
         print(
             f"Seeded {categories_added} categories, {subcategories_added} subcategories, "
             f"{items_added} kit items, {sign_outs_added} sign-out records, "
             f"{groups_added} item groups ({items_grouped} items folded into a group) and "
             f"{bundles_added} kit bundles ({bundle_lines_added} lines added) "
+            f"and turned on serial tracking for {ppe_tracked} PPE subcategories "
             f"(skipping anything that already exists)."
         )
 

@@ -1,3 +1,5 @@
+import secrets
+import uuid
 from datetime import date, datetime, timezone
 
 from flask_sqlalchemy import SQLAlchemy
@@ -265,6 +267,7 @@ class GearUnit(db.Model):
     purchase_date = db.Column(db.Date, nullable=True)
     status = db.Column(db.String(12), nullable=False, default="in_service")  # in_service / retired
     retired_at = db.Column(db.DateTime, nullable=True)
+    retired_reason = db.Column(db.Text, nullable=True)
     notes = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=utcnow)
 
@@ -276,6 +279,22 @@ class GearUnit(db.Model):
     @property
     def latest_inspection(self):
         return self.inspections[0] if self.inspections else None
+
+    @property
+    def latest_grade_inspection(self):
+        """Newest inspection that recorded a real condition (older records
+        used a "retire" grade before retiring became its own action)."""
+        return next((i for i in self.inspections if i.grade != "retire"), None)
+
+    @property
+    def open_loan(self):
+        return SignOut.query.filter_by(gear_unit_id=self.id, signed_in_at=None).first()
+
+    @property
+    def past_lifespan(self):
+        lifespan = self.item.subcategory.max_age_years if self.item.subcategory else None
+        age = self.age_years
+        return bool(lifespan and age is not None and age >= lifespan)
 
     @property
     def in_service(self):
@@ -341,6 +360,9 @@ class SignOut(db.Model):
     # who to send receipts and reminders to.
     due_date = db.Column(db.Date, nullable=True)
     borrower_email = db.Column(db.String(200), nullable=True)
+    # The exact serial-numbered piece handed over, when one was recorded.
+    gear_unit_id = db.Column(db.Integer, db.ForeignKey("gear_units.id"), nullable=True)
+    gear_unit = db.relationship("GearUnit")
     signed_out_at = db.Column(db.DateTime, default=utcnow)
     signed_in_at = db.Column(db.DateTime, nullable=True)
 
@@ -360,8 +382,9 @@ class EmailLog(db.Model):
     __tablename__ = "email_log"
 
     id = db.Column(db.Integer, primary_key=True)
-    kind = db.Column(db.String(20), nullable=False)  # receipt / day_before / overdue / digest
+    kind = db.Column(db.String(20), nullable=False)  # receipt / day_before / overdue / digest / unclaimed
     signout_id = db.Column(db.Integer, db.ForeignKey("sign_outs.id"), nullable=True)
+    request_group = db.Column(db.String(32), nullable=True)
     recipient = db.Column(db.String(200), nullable=False)
     # "sent", or "rejected" when Resend refused the recipient address - logged
     # either way so a bad address isn't retried on every hourly run.
@@ -383,7 +406,16 @@ class ItemRequest(db.Model):
     needed_from = db.Column(db.Date, nullable=True)
     needed_to = db.Column(db.Date, nullable=True)
     message = db.Column(db.Text, nullable=True)
-    status = db.Column(db.String(20), nullable=False, default="pending")  # pending / approved / denied
+    status = db.Column(db.String(20), nullable=False, default="pending")  # pending / approved / denied / cancelled
+    # Set when committee accept: how many they'll actually hand over (may be
+    # fewer than asked for), who took it on and where/when to collect.
+    approved_quantity = db.Column(db.Integer, nullable=True)
+    claimed_by = db.Column(db.String(120), nullable=True)
+    handover_note = db.Column(db.Text, nullable=True)
+    deny_reason = db.Column(db.Text, nullable=True)
+    # Unguessable key for the member's status page, shared by every line in
+    # one request_group.
+    status_token = db.Column(db.String(64), nullable=True, index=True, default=lambda: secrets.token_urlsafe(24))
     # Set when this line came from the basket as a group request (e.g. member
     # asked for "Nuts" rather than a specific size). item_name is still the
     # group's display name either way, so existing name-based display code
@@ -392,7 +424,7 @@ class ItemRequest(db.Model):
     group_id = db.Column(db.Integer, db.ForeignKey("item_groups.id"), nullable=True)
     # Shared by every line item submitted together from one basket checkout, so
     # the admin page can display and resolve them as a single request.
-    request_group = db.Column(db.String(32), nullable=True)
+    request_group = db.Column(db.String(32), nullable=True, default=lambda: uuid.uuid4().hex)
     # Which club session the member will collect/return the kit at (e.g. "Taf
     # Monday"), or "Other" - set once per checkout and copied onto every line
     # in that request_group, same as message/requester_name. The *_other
@@ -418,6 +450,10 @@ class ItemRequest(db.Model):
     @property
     def return_display(self):
         return self.return_other if self.return_slot == "Other" else self.return_slot
+
+    @property
+    def handover_quantity(self):
+        return self.approved_quantity if self.approved_quantity is not None else self.quantity
 
     @property
     def matching_item(self):

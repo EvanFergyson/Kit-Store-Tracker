@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Sign Out Several Items{% endblock %}
+{% block content %}
+  <a class="back-link" href="{{ url_for('sign_in_out') }}">&larr; Sign In/Out</a>
+  <h1>Sign Out to One Person</h1>
+
+  <datalist id="borrower-names">
+    {% for name in borrower_names %}<option value="{{ name }}">{% endfor %}
+  </datalist>
+
+  <form method="post" class="card multi-signout">
+    {{ csrf_field() }}
+    <label for="borrower_name">Borrower</label>
+    <input type="text" id="borrower_name" name="borrower_name" list="borrower-names" value="{{ form.get('borrower_name', '') }}" required autocomplete="off">
+
+    <label for="borrower_email">Their email (optional)</label>
+    <input type="email" id="borrower_email" name="borrower_email" value="{{ form.get('borrower_email', '') }}" autocomplete="off">
+    <p class="field-hint">With an email they get a receipt and a reminder before it's due.</p>
+
+    <h2>Items</h2>
+    {% set chosen = form.getlist('item_id') if form else [] %}
+    {% set chosen_qty = form.getlist('quantity') if form else [] %}
+    <div class="multi-rows js-multi-rows">
+      {% for i in range([chosen|length, 1]|max) %}
+        <div class="multi-row">
+          <select name="item_id" aria-label="Item">
+            <option value="">Choose an item&hellip;</option>
+            {% for category, group in items|groupby('category.name') %}
+              <optgroup label="{{ category }}">
+                {% for item in group %}
+                  <option value="{{ item.id }}"{% if chosen[i] == item.id|string %} selected{% endif %}{% if item.quantity_available < 1 %} disabled{% endif %}>{{ item.name }} ({{ item.quantity_available }} available)</option>
+                {% endfor %}
+              </optgroup>
+            {% endfor %}
+          </select>
+          <div class="qty-stepper">
+            <button type="button" class="qty-step qty-step-down" aria-label="Decrease quantity">&minus;</button>
+            <input type="number" name="quantity" min="1" value="{{ chosen_qty[i] if chosen_qty[i] is defined else 1 }}" inputmode="numeric" aria-label="Quantity">
+            <button type="button" class="qty-step qty-step-up" aria-label="Increase quantity">+</button>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+    <button type="button" class="btn btn-small btn-secondary js-multi-add">+ Add Another Item</button>
+
+    <label for="due_date">Due back</label>
+    <input type="date" id="due_date" name="due_date" value="{{ form.get('due_date') or default_due_date.isoformat() }}" required>
+    <label for="notes">Notes</label>
+    <input type="text" id="notes" name="notes" value="{{ form.get('notes', '') }}" placeholder="Optional">
+
+    <button type="submit" class="btn btn-primary">Sign Out All</button>
+  </form>
+{% endblock %}

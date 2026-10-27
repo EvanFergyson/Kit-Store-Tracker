@@ -45,6 +45,10 @@
       <path d="M10 17l5-5-5-5"/>
       <path d="M15 12H3"/>
     </symbol>
+    <symbol id="icon-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6l8-3z"/>
+      <path d="M8.5 12l2.5 2.5 4.5-5"/>
+    </symbol>
     <symbol id="icon-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="11" cy="11" r="7"/>
       <path d="M21 21l-4.3-4.3"/>
@@ -73,7 +77,7 @@
     </a>
     {% if is_committee %}
       <a class="rail-link{{ ' active' if section == 'signio' else '' }}" href="{{ url_for('sign_in_out') }}" aria-label="Sign In/Out" title="Sign In/Out"><svg class="nav-icon"><use href="#icon-swap"/></svg></a>
-      <a class="rail-link{{ ' active' if section in ('admin', 'gear') else '' }}" href="{{ url_for('admin') }}" aria-label="Admin" title="Admin"><svg class="nav-icon"><use href="#icon-settings"/></svg></a>
+      <a class="rail-link{{ ' active' if section in ('admin', 'gear') else '' }}" href="{{ url_for('admin') }}" aria-label="Admin{% if pending_count %}, {{ pending_count }} requests waiting{% endif %}" title="Admin"><svg class="nav-icon"><use href="#icon-settings"/></svg>{% if pending_count %}<span class="nav-count">{{ pending_count }}</span>{% endif %}</a>
     {% endif %}
     <span class="rail-spacer"></span>
     {% if is_committee %}
@@ -89,10 +93,17 @@
         <img src="{{ url_for('static', filename='img/logo.svg') }}" alt="">
       </a>
       <a class="wordmark" href="{{ url_for('home') }}">CUMC Kit Store</a>
-      <form method="get" action="{{ url_for('search_kit') }}" class="nav-search" role="search">
-        <svg class="nav-search-icon" aria-hidden="true"><use href="#icon-search"/></svg>
-        <input type="search" name="q" placeholder="Search kit&hellip;" aria-label="Search kit" value="{{ request.args.get('q', '') if ep == 'search_kit' else '' }}">
-      </form>
+      {% if section == 'gear' and session.get('is_gear') %}
+        <form method="get" action="{{ url_for('gear_register') }}" class="nav-search" role="search">
+          <svg class="nav-search-icon" aria-hidden="true"><use href="#icon-search"/></svg>
+          <input type="search" name="q" placeholder="Find a serial&hellip;" aria-label="Find a serial number" value="{{ request.args.get('q', '') if ep == 'gear_register' else '' }}" autocapitalize="characters">
+        </form>
+      {% else %}
+        <form method="get" action="{{ url_for('search_kit') }}" class="nav-search" role="search">
+          <svg class="nav-search-icon" aria-hidden="true"><use href="#icon-search"/></svg>
+          <input type="search" name="q" placeholder="Search kit&hellip;" aria-label="Search kit" value="{{ request.args.get('q', '') if ep == 'search_kit' else '' }}">
+        </form>
+      {% endif %}
       <nav class="topbar-links" aria-label="Shortcuts">
         <a href="{{ url_for('request_kit') }}"{% if section == 'request' %} aria-current="page"{% endif %}>Request Kit</a>
         <a href="{{ url_for('view_basket') }}"{% if section == 'basket' %} aria-current="page"{% endif %}>Request List<span class="js-basket-count-text"{% if not basket_count %} hidden{% endif %}> ({{ basket_count }})</span></a>
@@ -134,12 +145,18 @@
       <a class="tab{{ ' active' if section == 'signio' else '' }}" href="{{ url_for('sign_in_out') }}">
         <svg class="nav-icon"><use href="#icon-swap"/></svg><span>Sign In/Out</span>
       </a>
-      <a class="tab{{ ' active' if section in ('admin', 'gear') else '' }}" href="{{ url_for('admin') }}">
+      <a class="tab{{ ' active' if section == 'admin' or (section == 'gear' and not session.get('is_gear')) else '' }}" href="{{ url_for('admin') }}">
         <svg class="nav-icon"><use href="#icon-settings"/></svg><span>Admin</span>
+        {% if pending_count %}<span class="nav-count" aria-label="{{ pending_count }} requests waiting">{{ pending_count }}</span>{% endif %}
       </a>
     {% else %}
       <a class="tab{{ ' active' if ep == 'login' else '' }}" href="{{ url_for('login') }}">
         <svg class="nav-icon"><use href="#icon-login"/></svg><span>Committee</span>
+      </a>
+    {% endif %}
+    {% if session.get('is_gear') %}
+      <a class="tab{{ ' active' if section == 'gear' else '' }}" href="{{ url_for('gear_register') }}">
+        <svg class="nav-icon"><use href="#icon-shield"/></svg><span>Gear</span>
       </a>
     {% endif %}
   </nav>

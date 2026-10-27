@@ -1,10 +1,7 @@
 <nav class="admin-subnav" aria-label="Gear register sections">
   <a href="{{ url_for('gear_register') }}" class="admin-subnav-link{{ ' active' if gear_tab == 'register' else '' }}">Register</a>
+  <a href="{{ url_for('gear_inspect') }}" class="admin-subnav-link{{ ' active' if gear_tab == 'inspect' else '' }}">Inspect</a>
   <a href="{{ url_for('add_gear_unit') }}" class="admin-subnav-link{{ ' active' if gear_tab == 'add' else '' }}">Add Piece</a>
   <a href="{{ url_for('gear_import') }}" class="admin-subnav-link{{ ' active' if gear_tab == 'import' else '' }}">Import / Export</a>
   <a href="{{ url_for('gear_settings') }}" class="admin-subnav-link{{ ' active' if gear_tab == 'settings' else '' }}">Settings</a>
-  <form method="post" action="{{ url_for('gear_logout') }}" class="subnav-form">
-    {{ csrf_field() }}
-    <button type="submit" class="admin-subnav-link">Lock register</button>
-  </form>
 </nav>

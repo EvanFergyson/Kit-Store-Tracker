@@ -80,6 +80,9 @@ class Config:
     RESEND_API_KEY = _env("RESEND_API_KEY")
     MAIL_FROM = _env("MAIL_FROM", "CUMC Kit Store <kit@example.org>")
     GEAR_SEC_EMAIL = _env("GEAR_SEC_EMAIL")
+    # Where new member requests are announced. Comma-separated for several
+    # people; falls back to GEAR_SEC_EMAIL.
+    REQUESTS_EMAIL = _env("REQUESTS_EMAIL", GEAR_SEC_EMAIL)
     # Where replies to reminder emails go (the sending address itself has no
     # inbox). Falls back to GEAR_SEC_EMAIL.
     MAIL_REPLY_TO = _env("MAIL_REPLY_TO", GEAR_SEC_EMAIL)

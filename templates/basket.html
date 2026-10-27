@@ -10,7 +10,12 @@
         <tbody>
           {% for line in line_items %}
           <tr class="basket-row">
-            <td>{{ line.name }}</td>
+            <td>
+              {{ line.name }}
+              {% if line.available is not none and line.quantity > line.available %}
+                <br><small class="stock-warning">{% if line.available == 0 %}All out right now{% else %}Only {{ line.available }} available{% endif %} &mdash; committee may offer fewer or a substitute.</small>
+              {% endif %}
+            </td>
             <td>
               <form method="post" action="{{ url_for('update_basket_item', key=line.key) }}" class="basket-add-form js-basket-update">
                 {{ csrf_field() }}
@@ -19,7 +24,7 @@
                   <input type="number" name="quantity" min="1" value="{{ line.quantity }}" inputmode="numeric" aria-label="Quantity of {{ line.name }}">
                   <button type="button" class="qty-step qty-step-up" aria-label="Increase quantity">+</button>
                 </div>
-                <button type="submit" class="btn btn-small btn-primary">Update</button>
+                <noscript><button type="submit" class="btn btn-small btn-primary">Update</button></noscript>
               </form>
             </td>
             <td class="col-tight">
@@ -39,33 +44,23 @@
       <form method="post" id="checkout-form">
         {{ csrf_field() }}
         <label for="requester_name">Your name</label>
-        <input type="text" id="requester_name" name="requester_name" required>
+        <input type="text" id="requester_name" name="requester_name" value="{{ requester.name or '' }}" required autocomplete="name">
 
         <label for="requester_email">Your email</label>
-        <input type="email" id="requester_email" name="requester_email" required autocomplete="email">
-        <p class="field-hint">We'll email you a receipt and a reminder before it's due back.</p>
+        <input type="email" id="requester_email" name="requester_email" value="{{ requester.email or '' }}" required autocomplete="email">
+        <p class="field-hint">We'll email you a link to track this request, and a reminder before it's due back.</p>
 
-        <label>When will you pick the kit up?</label>
-        <div class="session-options" data-session-group="pickup">
-          {% for session in kit_sessions %}
-            <label>
-              <input type="radio" name="pickup_slot" value="{{ session }}" required>
-              {{ session }}
-            </label>
-          {% endfor %}
+        <div class="date-pair">
+          <div>
+            <label for="needed_from">Need it from</label>
+            <input type="date" id="needed_from" name="needed_from" min="{{ today.isoformat() }}" required>
+          </div>
+          <div>
+            <label for="needed_to">Return by</label>
+            <input type="date" id="needed_to" name="needed_to" min="{{ today.isoformat() }}" required>
+          </div>
         </div>
-        <input type="text" name="pickup_other" class="session-other-input" data-session-other="pickup" placeholder="Tell us when/where" style="display:none;">
-
-        <label>When will you return it?</label>
-        <div class="session-options" data-session-group="return">
-          {% for session in kit_sessions %}
-            <label>
-              <input type="radio" name="return_slot" value="{{ session }}" required>
-              {{ session }}
-            </label>
-          {% endfor %}
-        </div>
-        <input type="text" name="return_other" class="session-other-input" data-session-other="return" placeholder="Tell us when/where" style="display:none;">
+        <p class="field-hint">A committee member will reply with when and where to collect.</p>
 
         <label for="message">Notes (dates needed, trip details, etc.)</label>
         <textarea id="message" name="message" rows="4"></textarea>

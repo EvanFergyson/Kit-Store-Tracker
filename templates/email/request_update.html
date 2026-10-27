@@ -1,0 +1,23 @@
+{% extends "email/_layout.html" %}
+{% block body %}
+  <p style="margin:0 0 16px;font-size:16px;">Hi {{ first.requester_name }},</p>
+  {% set approved = lines | selectattr('status', 'equalto', 'approved') | list %}
+  {% set cancelled = lines | selectattr('status', 'equalto', 'cancelled') | list %}
+  {% if cancelled and not approved %}
+    <p style="margin:0 0 20px;font-size:16px;line-height:1.5;">Your kit request has been cancelled. If that's a surprise, just reply to this email.</p>
+  {% elif approved %}
+    <p style="margin:0 0 20px;font-size:16px;line-height:1.5;">Good news &mdash; {{ first.claimed_by }} has approved your kit request.</p>
+  {% else %}
+    <p style="margin:0 0 20px;font-size:16px;line-height:1.5;">Sorry &mdash; we can't lend this kit this time.</p>
+  {% endif %}
+  {% set show_reasons = true %}
+  {% include "email/_request_lines.html" %}
+  {% if approved and first.handover_note %}
+    <div style="margin:20px 0 0;padding:14px 16px;background:#f5f5f7;border-radius:10px;font-size:15px;line-height:1.5;">
+      <strong>Collecting it:</strong><br>{{ first.handover_note }}
+    </div>
+    {% if first.needed_to %}<p style="margin:16px 0 0;font-size:15px;">Due back {{ first.needed_to.strftime('%a %d %b') }}.</p>{% endif %}
+  {% endif %}
+  <p style="margin:24px 0 0;font-size:16px;"><a href="{{ status_url }}" style="color:#bc1016;font-weight:600;">See your request</a></p>
+  <p style="margin:12px 0 0;font-size:14px;color:#6e6e73;line-height:1.5;">Reply to this email to change or cancel.</p>
+{% endblock %}

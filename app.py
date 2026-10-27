@@ -28,7 +28,7 @@ from flask import (
 )
 from flask_wtf.csrf import CSRFProtect, generate_csrf
 from markupsafe import Markup
-from sqlalchemy import func, inspect, or_, text
+from sqlalchemy import func, inspect, or_, select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.schema import CreateColumn
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -88,14 +88,7 @@ def _record_failed_login(ip):
 def _clear_login_attempts(ip):
     _login_attempts.pop(ip, None)
 
-# Recurring club sessions offered on the checkout page for picking up/
-# returning kit, e.g. "Tuesday Bus - 6:45". "Other" is always appended so a
-# member whose plans don't fit one of these can describe it themselves - kept
-# as one shared list (rather than separate pickup/return lists) since the
-# same sessions apply to both.
 SIGN_OUT_HISTORY_LIMIT = 100
-
-KIT_SESSIONS = ["Taf Monday", "Tuesday Bus - 6:45", "Thursday Bus - 6:45", "Other"]
 
 # Deliberately loose (just "something@something.something") - this only
 # exists to catch typos/garbage before it's stored against a request, not to
@@ -216,7 +209,11 @@ def _ensure_schema():
     _add_missing_columns(KitItem, ["rack_id"])
     _add_missing_columns(Subcategory, ["track_serials", "max_age_years"])
     _add_missing_columns(SignOut, ["rack_loan_id", "due_date", "borrower_email"])
-    _add_missing_columns(EmailLog, ["status"])
+    _add_missing_columns(EmailLog, ["status", "request_group"])
+    _add_missing_columns(ItemRequest, ["approved_quantity", "claimed_by", "handover_note", "deny_reason", "status_token"])
+    _add_missing_columns(GearUnit, ["retired_reason"])
+    _add_missing_columns(SignOut, ["gear_unit_id"])
+    _backfill_request_tokens()
 
     # Case-insensitive uniqueness backstop matching the app-level
     # _name_exists() checks - those do a SELECT then a separate INSERT/
@@ -241,6 +238,21 @@ def _ensure_schema():
     with db.engine.begin() as conn:
         for index_name, table_name, expression in unique_ci_indexes:
             conn.execute(text(f"CREATE UNIQUE INDEX IF NOT EXISTS {index_name} ON {table_name} ({expression})"))
+
+
+def _backfill_request_tokens():
+    """Give every request a request_group and a status_token, so older rows
+    work with the per-checkout accept/deny/status flows."""
+    with db.engine.begin() as conn:
+        conn.execute(text("UPDATE item_requests SET request_group = 'single-' || id WHERE request_group IS NULL"))
+        groups = [row[0] for row in conn.execute(
+            text("SELECT DISTINCT request_group FROM item_requests WHERE status_token IS NULL")
+        )]
+        for group in groups:
+            conn.execute(
+                text("UPDATE item_requests SET status_token = :token WHERE request_group = :group"),
+                {"token": secrets.token_urlsafe(24), "group": group},
+            )
 
 
 def _add_missing_columns(model, column_names):
@@ -364,7 +376,7 @@ def form_id_or_404(model, field):
     return db.get_or_404(model, row_id)
 
 
-def build_kit_entries(items, groups):
+def build_kit_entries(items, groups, available_first=False):
     """Merge ungrouped KitItems and ItemGroups into one alphabetically-sorted
     list for display, so members browsing or searching see a single combined
     list instead of two separate "Kit" / "Individual Items" tables - having
@@ -398,7 +410,10 @@ def build_kit_entries(items, groups):
         }
         for item in items
     ]
-    entries.sort(key=lambda entry: entry["name"].lower())
+    if available_first:
+        entries.sort(key=lambda entry: (entry["quantity_available"] <= 0, entry["name"].lower()))
+    else:
+        entries.sort(key=lambda entry: entry["name"].lower())
     return entries
 
 
@@ -423,7 +438,9 @@ class InsufficientStockError(Exception):
         super().__init__(f"Not enough '{item.name}' available.")
 
 
-def _create_signout(item, quantity, borrower_name, notes, checked_out_by, due_date=None, borrower_email=None):
+def _create_signout(
+    item, quantity, borrower_name, notes, checked_out_by, due_date=None, borrower_email=None, gear_unit=None
+):
     """Decrement one KitItem's available stock and record a SignOut for it.
     Caller commits (and flushes first if it needs the new row's id before
     commit, e.g. to link it back to an ItemRequest).
@@ -458,9 +475,89 @@ def _create_signout(item, quantity, borrower_name, notes, checked_out_by, due_da
         checked_out_by=checked_out_by,
         due_date=due_date,
         borrower_email=borrower_email or None,
+        gear_unit_id=gear_unit.id if gear_unit else None,
     )
     db.session.add(signout)
     return signout
+
+
+def _serial_from_form(item, raw):
+    """(unit, error) for an optional serial typed at sign-out: blank is fine,
+    otherwise it must be an in-service piece of this item that isn't out."""
+    serial = (raw or "").strip()
+    if not serial:
+        return None, None
+    unit = GearUnit.query.filter(func.lower(GearUnit.serial) == serial.lower()).first()
+    if not unit or unit.item_id != item.id:
+        return None, f"Serial {serial} isn't registered as a {item.name}."
+    if not unit.in_service:
+        return None, f"{serial} is retired — it can't go out."
+    if unit.open_loan:
+        return None, f"{serial} is already signed out to {unit.open_loan.borrower_name}."
+    return unit, None
+
+
+def _open_loan_quantity(item_id):
+    """SQL expression: units of this item covered by loans still out."""
+    return (
+        select(func.coalesce(func.sum(SignOut.quantity), 0))
+        .where(SignOut.item_id == item_id, SignOut.signed_in_at.is_(None))
+        .scalar_subquery()
+    )
+
+
+def _unrecorded_out():
+    """[(item, units)] for active items with stock marked out that no open
+    loan accounts for - e.g. kit imported from the old spreadsheet as
+    "out" without a borrower. Those units can't be signed in through a loan."""
+    open_by_item = dict(
+        db.session.query(SignOut.item_id, func.sum(SignOut.quantity))
+        .filter(SignOut.signed_in_at.is_(None))
+        .group_by(SignOut.item_id)
+        .all()
+    )
+    items = (
+        KitItem.query.filter(KitItem.active.is_(True), KitItem.quantity_available < KitItem.quantity_total)
+        .order_by(KitItem.name)
+        .all()
+    )
+    result = []
+    for item in items:
+        units = item.quantity_total - item.quantity_available - (open_by_item.get(item.id) or 0)
+        if units > 0:
+            result.append((item, units))
+    return result
+
+
+def _return_unrecorded(item, quantity, returned_by):
+    """Put back up to `quantity` unrecorded units of an item, atomically: the
+    UPDATE re-checks that stock out minus open loans still covers it, so a
+    double-tap (or a real loan) can never push stock past what's accounted
+    for. Records a closed SignOut as the audit trail. Caller commits."""
+    result = db.session.execute(
+        KitItem.__table__.update()
+        .where(
+            KitItem.id == item.id,
+            KitItem.quantity_total - KitItem.quantity_available - _open_loan_quantity(item.id) >= quantity,
+        )
+        .values(quantity_available=KitItem.quantity_available + quantity)
+    )
+    if result.rowcount != 1:
+        return False
+    now = utcnow()
+    db.session.add(
+        SignOut(
+            item_id=item.id,
+            borrower_name="Unrecorded loan",
+            quantity=quantity,
+            notes="Signed back in manually - marked out with no loan record",
+            checked_out_by=returned_by,
+            signed_out_at=now,
+            signed_in_at=now,
+        )
+    )
+    db.session.expire(item, ["quantity_available"])
+    return True
 
 
 def _return_signout(signout):
@@ -479,6 +576,75 @@ def _return_signout(signout):
         .values(quantity_available=KitItem.quantity_available + signout.quantity)
     )
     return True
+
+
+def _return_part(signout, quantity, returned_by):
+    """Sign back in `quantity` of a loan that has more out, leaving the rest
+    on the loan. The returned part is recorded as its own closed SignOut.
+    Caller commits."""
+    result = db.session.execute(
+        SignOut.__table__.update()
+        .where(SignOut.id == signout.id, SignOut.signed_in_at.is_(None), SignOut.quantity > quantity)
+        .values(quantity=SignOut.quantity - quantity)
+    )
+    if result.rowcount != 1:
+        return False
+    db.session.add(
+        SignOut(
+            item_id=signout.item_id,
+            borrower_name=signout.borrower_name,
+            borrower_email=signout.borrower_email,
+            quantity=quantity,
+            notes=signout.notes,
+            checked_out_by=returned_by,
+            due_date=signout.due_date,
+            signed_out_at=signout.signed_out_at,
+            signed_in_at=utcnow(),
+        )
+    )
+    db.session.execute(
+        KitItem.__table__.update()
+        .where(KitItem.id == signout.item_id)
+        .values(quantity_available=KitItem.quantity_available + quantity)
+    )
+    db.session.expire(signout)
+    return True
+
+
+def _undo_return(signout):
+    """Reopen a loan signed in by mistake, taking its stock back out. Fails
+    if the loan isn't signed in, or the stock has gone out again since."""
+    reopened = db.session.execute(
+        SignOut.__table__.update()
+        .where(SignOut.id == signout.id, SignOut.signed_in_at.isnot(None))
+        .values(signed_in_at=None)
+    )
+    if reopened.rowcount != 1:
+        return False
+    taken = db.session.execute(
+        KitItem.__table__.update()
+        .where(KitItem.id == signout.item_id, KitItem.quantity_available >= signout.quantity)
+        .values(quantity_available=KitItem.quantity_available - signout.quantity)
+    )
+    return taken.rowcount == 1
+
+
+def _loans_by_borrower(loans):
+    """Open loans grouped per borrower, overdue borrowers first, then by the
+    soonest due date."""
+    groups = {}
+    for loan in loans:
+        key = (loan.borrower_name.strip().lower(), (loan.borrower_email or "").lower())
+        groups.setdefault(key, {"name": loan.borrower_name, "email": loan.borrower_email, "loans": []})
+        groups[key]["loans"].append(loan)
+    result = list(groups.values())
+    for group in result:
+        group["overdue"] = any(loan.is_overdue for loan in group["loans"])
+        dues = [loan.due_date for loan in group["loans"] if loan.due_date]
+        group["next_due"] = min(dues) if dues else None
+        group["search"] = " ".join([group["name"], group["email"] or ""] + [l.item.name for l in group["loans"]]).lower()
+    result.sort(key=lambda g: (not g["overdue"], g["next_due"] or date.max, g["name"].lower()))
+    return result
 
 
 def _rack_blockers(rack):
@@ -627,19 +793,45 @@ def basket_line_items(basket):
         item = db.session.get(KitItem, int(item_id_str))
         if item and item.active and item.rack_id is None:
             lines.append(
-                {"key": f"item:{item_id_str}", "name": item.name, "quantity": quantity, "group_id": None}
+                {
+                    "key": f"item:{item_id_str}",
+                    "name": item.name,
+                    "quantity": quantity,
+                    "group_id": None,
+                    "available": item.quantity_available,
+                }
             )
     for group_id_str, quantity in basket.get("groups", {}).items():
         group = db.session.get(ItemGroup, int(group_id_str))
         if group and group.active_items:
             lines.append(
-                {"key": f"group:{group_id_str}", "name": group.name, "quantity": quantity, "group_id": group.id}
+                {
+                    "key": f"group:{group_id_str}",
+                    "name": group.name,
+                    "quantity": quantity,
+                    "group_id": group.id,
+                    "available": group.quantity_available,
+                }
             )
     for idx, other in enumerate(basket.get("other", [])):
         lines.append(
-            {"key": f"other:{idx}", "name": other["name"], "quantity": other["quantity"], "group_id": None}
+            {
+                "key": f"other:{idx}",
+                "name": other["name"],
+                "quantity": other["quantity"],
+                "group_id": None,
+                "available": None,
+            }
         )
     return lines
+
+
+def _stock_note(wanted, available):
+    if wanted <= available:
+        return ""
+    if available == 0:
+        return " It's all out right now — committee may offer a substitute."
+    return f" Only {available} available — committee may offer fewer."
 
 
 def basket_line_count(basket):
@@ -658,18 +850,68 @@ def group_pending_requests(requests):
         key = r.request_group or f"single-{r.id}"
         if key not in groups:
             groups[key] = {
-                "request_group": r.request_group,
+                "request_group": key,
                 "requester_name": r.requester_name,
                 "requester_email": r.requester_email,
                 "message": r.message,
                 "pickup_display": r.pickup_display,
                 "return_display": r.return_display,
+                "needed_from": r.needed_from,
+                "needed_to": r.needed_to,
+                "claimed_by": r.claimed_by,
+                "handover_note": r.handover_note,
                 "created_at": r.created_at,
                 "lines": [],  # named "lines" not "items" - dicts already have a built-in .items()
             }
             order.append(key)
         groups[key]["lines"].append(r)
     return [groups[key] for key in order]
+
+
+def line_available(line):
+    """Units on the shelf right now for a request or basket line's item or
+    group, or None for a free-text line that matches nothing."""
+    if line.group_id:
+        group = db.session.get(ItemGroup, line.group_id)
+        return group.quantity_available if group else None
+    item = line.matching_item
+    return item.quantity_available if item else None
+
+
+def request_lines(request_group):
+    lines = ItemRequest.query.filter_by(request_group=request_group).order_by(ItemRequest.id).all()
+    if not lines:
+        abort(404)
+    return lines
+
+
+def recipients(raw):
+    return [address.strip() for address in (raw or "").split(",") if address.strip()]
+
+
+def send_request_email(kind, lines, **extra):
+    """Email about one checkout: "received" to the member, "new" to the
+    requests inbox, or "update" to the member after committee act on it."""
+    first = lines[0]
+    status_url = url_for("request_status", token=first.status_token, _external=True)
+    html = render_template(
+        f"email/request_{'update' if kind == 'update' else kind}.html",
+        lines=lines,
+        first=first,
+        status_url=status_url,
+        admin_url=url_for("admin", _external=True),
+        **extra,
+    )
+    if kind == "new":
+        to_list = recipients(current_app.config.get("REQUESTS_EMAIL"))
+        subject = extra.get("subject") or f"New kit request from {first.requester_name}"
+    else:
+        to_list = [first.requester_email] if first.requester_email else []
+        subject = extra.get("subject") or "Your CUMC kit request"
+    # The inbox replies straight to the member; the member replies to the club.
+    reply_to = first.requester_email if kind == "new" else None
+    for to in to_list:
+        send_email(to, subject, html, reply_to=reply_to)
 
 
 # ----------------------------------------------------------- gear register
@@ -708,6 +950,45 @@ def _parse_csv_date(raw):
         except ValueError:
             pass
     return None, False
+
+
+# Subcategory name keywords -> lifespan in years (None = tracked, no age limit).
+PPE_DEFAULTS = [
+    (("harness", "helmet", "sling", "rope", "prussik", "daisy"), 10),
+    (("carabiner", "quickdraw", "atc", "belay", "descender", "assisted", "maillon"), None),
+]
+
+
+def apply_ppe_defaults():
+    """Track every PPE subcategory, filling in a lifespan only where none is
+    set. Returns how many subcategories changed."""
+    changed = 0
+    for sub in Subcategory.query.all():
+        name = sub.name.lower()
+        for keywords, lifespan in PPE_DEFAULTS:
+            if any(word in name for word in keywords):
+                if not sub.track_serials or (lifespan and not sub.max_age_years):
+                    sub.track_serials = True
+                    sub.max_age_years = sub.max_age_years or lifespan
+                    changed += 1
+                break
+    return changed
+
+
+INSPECTION_DUE_AFTER = timedelta(days=335)  # about 11 months - a yearly check
+
+
+def _inspection_queue():
+    """In-service pieces without a real condition check in the last ~11
+    months, past-lifespan ones first, then by item and serial."""
+    cutoff = utcnow() - INSPECTION_DUE_AFTER
+    units = GearUnit.query.filter_by(status="in_service").join(KitItem).order_by(KitItem.name, GearUnit.serial).all()
+    queue = [
+        unit for unit in units
+        if not unit.latest_grade_inspection or unit.latest_grade_inspection.inspected_at < cutoff
+    ]
+    queue.sort(key=lambda unit: not unit.past_lifespan)
+    return queue, len(units)
 
 
 def _parse_grade(raw):
@@ -787,11 +1068,12 @@ def _csv_safe(value):
     return "'" + text if text[:1] in ("=", "+", "-", "@") else text
 
 
-def _retire_unit(unit, reduce_stock):
+def _retire_unit(unit, reduce_stock, reason=None):
     """Retire a unit; optionally take it out of its item's stock. Returns a
     sentence describing what happened to the stock (or '')."""
     unit.status = "retired"
     unit.retired_at = utcnow()
+    unit.retired_reason = reason or None
     if not reduce_stock:
         return ""
     item = unit.item
@@ -817,7 +1099,7 @@ RESEND_URL = "https://api.resend.com/emails"
 SENT, RETRY, REJECTED = "sent", "retry", "rejected"
 
 
-def send_email(to, subject, html):
+def send_email(to, subject, html, reply_to=None):
     """Send one email via Resend and return SENT, RETRY or REJECTED. Never
     raises: one bad email mustn't abort the rest of a reminder run."""
     config = current_app.config
@@ -825,12 +1107,12 @@ def send_email(to, subject, html):
         current_app.logger.warning("Email not sent: %r isn't a valid address", to)
         return REJECTED
     if not config.get("RESEND_API_KEY"):
-        OUTBOX.append({"to": to, "subject": subject, "html": html})
+        OUTBOX.append({"to": to, "subject": subject, "html": html, "reply_to": reply_to})
         current_app.logger.info("Email not sent (no RESEND_API_KEY) to %s: %s", to, subject)
         return SENT
     message = {"from": config["MAIL_FROM"], "to": [to], "subject": subject, "html": html}
-    if config.get("MAIL_REPLY_TO"):
-        message["reply_to"] = config["MAIL_REPLY_TO"]
+    if reply_to or config.get("MAIL_REPLY_TO"):
+        message["reply_to"] = reply_to or config["MAIL_REPLY_TO"]
     req = urllib.request.Request(
         RESEND_URL,
         data=json.dumps(message).encode(),
@@ -934,6 +1216,7 @@ def run_reminders(today):
             "or reply to let us know if there's a problem.",
         ),
         "digest": 0,
+        "unclaimed": _send_unclaimed_reminder(today),
     }
 
     digest_to = current_app.config.get("GEAR_SEC_EMAIL")
@@ -943,9 +1226,15 @@ def run_reminders(today):
         overdue_racks = RackLoan.query.filter(
             RackLoan.signed_in_at.is_(None), RackLoan.due_date.isnot(None), RackLoan.due_date < today
         ).all()
-        if overdue_loans or overdue_racks:
-            html = render_template("email/digest.html", loans=overdue_loans, racks=overdue_racks, today=today)
-            outcome = send_email(digest_to, f"Overdue kit: {len(overdue_loans) + len(overdue_racks)} loan(s)", html)
+        expired = [unit for unit in GearUnit.query.filter_by(status="in_service") if unit.past_lifespan]
+        if overdue_loans or overdue_racks or expired:
+            html = render_template(
+                "email/digest.html", loans=overdue_loans, racks=overdue_racks, expired=expired, today=today
+            )
+            subject = f"Overdue kit: {len(overdue_loans) + len(overdue_racks)} loan(s)"
+            if expired:
+                subject += f", {len(expired)} piece(s) past lifespan"
+            outcome = send_email(digest_to, subject, html)
             if outcome != RETRY:
                 db.session.add(EmailLog(kind="digest", recipient=digest_to, status=outcome, sent_on=today))
                 db.session.commit()
@@ -953,10 +1242,53 @@ def run_reminders(today):
     return counts
 
 
+UNCLAIMED_AFTER = timedelta(hours=48)
+
+
+def _send_unclaimed_reminder(today):
+    """Nudge the requests inbox, once per request, about any request nobody
+    has accepted or denied within 48 hours."""
+    to_list = recipients(current_app.config.get("REQUESTS_EMAIL"))
+    if not to_list:
+        return 0
+    reminded = {g for (g,) in db.session.query(EmailLog.request_group).filter(EmailLog.kind == "unclaimed")}
+    stale = ItemRequest.query.filter(
+        ItemRequest.status == "pending", ItemRequest.created_at <= utcnow() - UNCLAIMED_AFTER
+    ).all()
+    groups = [g for g in group_pending_requests(stale) if g["request_group"] not in reminded]
+    if not groups:
+        return 0
+    html = render_template("email/unclaimed.html", groups=groups, admin_url=url_for("admin", _external=True))
+    subject = f"{len(groups)} kit request{'s' if len(groups) != 1 else ''} waiting over 48 hours"
+    outcomes = [send_email(to, subject, html) for to in to_list]
+    if all(outcome == RETRY for outcome in outcomes):
+        return 0
+    for group in groups:
+        db.session.add(
+            EmailLog(kind="unclaimed", request_group=group["request_group"], recipient=to_list[0], sent_on=today)
+        )
+    db.session.commit()
+    return len(groups)
+
+
 def register_routes(app):
+    app.jinja_env.globals["line_available"] = line_available
+
     @app.context_processor
     def inject_basket_count():
-        return {"basket_count": basket_line_count(get_basket()), "default_due_date": _default_due_date(), "today": date.today()}
+        pending_count = 0
+        if session.get("is_committee"):
+            pending_count = (
+                db.session.query(func.count(func.distinct(ItemRequest.request_group)))
+                .filter(ItemRequest.status == "pending")
+                .scalar()
+            )
+        return {
+            "basket_count": basket_line_count(get_basket()),
+            "default_due_date": _default_due_date(),
+            "today": date.today(),
+            "pending_count": pending_count,
+        }
 
     # No route had ever wrapped a db.session.commit() in a try/except, so any
     # database error (a constraint the app-level checks missed, a dropped
@@ -1064,7 +1396,7 @@ def register_routes(app):
             .all()
             if group.active_items
         ]
-        kit_entries = build_kit_entries(items, groups)
+        kit_entries = build_kit_entries(items, groups, available_first=True)
         # Only offer a filter chip for subcategories that actually have
         # something to show (grouped or not) - a subcategory with nothing
         # visible in it would otherwise be a dead-end chip that filters the
@@ -1126,7 +1458,7 @@ def register_routes(app):
                 .all()
                 if group.active_items
             ]
-        kit_entries = build_kit_entries(items, groups)
+        kit_entries = build_kit_entries(items, groups, available_first=True)
         return render_template(
             "search_results.html", query=query, kit_entries=kit_entries, has_groups=bool(groups)
         )
@@ -1152,13 +1484,17 @@ def register_routes(app):
                 ok = True
                 key = str(item.id)
                 basket["items"][key] = basket["items"].get(key, 0) + quantity
-                message = f"Added {quantity} x {item.name} to your request list."
+                message = f"Added {quantity} x {item.name} to your request list." + _stock_note(
+                    basket["items"][key], item.quantity_available
+                )
         elif group_id:
             ok = True
             group = form_id_or_404(ItemGroup, "group_id")
             key = str(group.id)
             basket["groups"][key] = basket["groups"].get(key, 0) + quantity
-            message = f"Added {quantity} x {group.name} to your request list."
+            message = f"Added {quantity} x {group.name} to your request list." + _stock_note(
+                basket["groups"][key], group.quantity_available
+            )
         elif custom_name:
             ok = True
             basket["other"].append({"name": custom_name, "quantity": quantity})
@@ -1218,10 +1554,9 @@ def register_routes(app):
             requester_name = request.form.get("requester_name", "").strip()
             requester_email = request.form.get("requester_email", "").strip()
             message = request.form.get("message", "").strip()
-            pickup_slot = request.form.get("pickup_slot", "").strip()
-            pickup_other = request.form.get("pickup_other", "").strip()
-            return_slot = request.form.get("return_slot", "").strip()
-            return_other = request.form.get("return_other", "").strip()
+            needed_from = parse_date(request.form.get("needed_from"))
+            needed_to = parse_date(request.form.get("needed_to"))
+            session["requester"] = {"name": requester_name, "email": requester_email}
 
             if not requester_name:
                 flash("Please enter your name.", "error")
@@ -1231,39 +1566,79 @@ def register_routes(app):
                 flash("That email address doesn't look right — check it and try again.", "error")
             elif not line_items:
                 flash("Your request list is empty.", "error")
-            elif not pickup_slot:
-                flash("Please choose when you'll pick the kit up.", "error")
-            elif pickup_slot == "Other" and not pickup_other:
-                flash("Please describe when/where you'll pick the kit up.", "error")
-            elif not return_slot:
-                flash("Please choose when you'll return the kit.", "error")
-            elif return_slot == "Other" and not return_other:
-                flash("Please describe when/where you'll return the kit.", "error")
+            elif not needed_from or not needed_to:
+                flash("Please choose when you need the kit and when you'll return it.", "error")
+            elif needed_from < date.today():
+                flash("The date you need the kit can't be in the past.", "error")
+            elif needed_to < needed_from:
+                flash("The return date must be on or after the date you need it.", "error")
             else:
                 checkout_group_id = uuid.uuid4().hex
+                token = secrets.token_urlsafe(24)
+                new_lines = []
                 for line in line_items:
-                    db.session.add(
-                        ItemRequest(
-                            requester_name=requester_name,
-                            requester_email=requester_email,
-                            item_name=line["name"],
-                            quantity=line["quantity"],
-                            message=message,
-                            request_group=checkout_group_id,
-                            group_id=line["group_id"],
-                            pickup_slot=pickup_slot,
-                            pickup_other=pickup_other if pickup_slot == "Other" else None,
-                            return_slot=return_slot,
-                            return_other=return_other if return_slot == "Other" else None,
-                        )
+                    new_line = ItemRequest(
+                        requester_name=requester_name,
+                        requester_email=requester_email,
+                        item_name=line["name"],
+                        quantity=line["quantity"],
+                        message=message,
+                        request_group=checkout_group_id,
+                        group_id=line["group_id"],
+                        needed_from=needed_from,
+                        needed_to=needed_to,
+                        status_token=token,
                     )
+                    db.session.add(new_line)
+                    new_lines.append(new_line)
                 db.session.commit()
                 session["basket"] = {"items": {}, "groups": {}, "other": []}
                 session.modified = True
-                flash("Your request has been sent to the committee. We'll be in touch!", "success")
-                return redirect(url_for("request_kit"))
+                send_request_email("received", new_lines)
+                send_request_email("new", new_lines)
+                return redirect(url_for("request_status", token=token, sent=1))
 
-        return render_template("basket.html", line_items=line_items, kit_sessions=KIT_SESSIONS)
+        return render_template("basket.html", line_items=line_items, requester=session.get("requester", {}))
+
+    @app.route("/r/<token>")
+    def request_status(token):
+        lines = ItemRequest.query.filter_by(status_token=token).order_by(ItemRequest.id).all()
+        if not lines:
+            abort(404)
+        email = (lines[0].requester_email or "").lower()
+        loans = (
+            SignOut.query.filter(func.lower(SignOut.borrower_email) == email, SignOut.signed_in_at.is_(None))
+            .order_by(SignOut.due_date)
+            .all()
+            if email
+            else []
+        )
+        return render_template(
+            "request_status.html",
+            lines=lines,
+            first=lines[0],
+            loans=loans,
+            can_cancel=all(line.status == "pending" for line in lines),
+            just_sent=bool(request.args.get("sent")),
+        )
+
+    @app.route("/r/<token>/cancel", methods=["POST"])
+    def cancel_own_request(token):
+        lines = ItemRequest.query.filter_by(status_token=token).all()
+        if not lines:
+            abort(404)
+        if any(line.status != "pending" for line in lines):
+            flash("This request has already been dealt with — reply to the email to change it.", "error")
+            return redirect(url_for("request_status", token=token))
+        db.session.execute(
+            ItemRequest.__table__.update()
+            .where(ItemRequest.status_token == token, ItemRequest.status == "pending")
+            .values(status="cancelled", resolved_at=utcnow())
+        )
+        db.session.commit()
+        send_request_email("new", lines, cancelled=True, subject=f"Kit request cancelled by {lines[0].requester_name}")
+        flash("Your request has been cancelled.", "success")
+        return redirect(url_for("request_status", token=token))
 
     @app.route("/basket/update/<key>", methods=["POST"])
     def update_basket_item(key):
@@ -1331,16 +1706,26 @@ def register_routes(app):
                 return render_template("login.html")
 
             password = request.form.get("password", "")
+            committee_name = request.form.get("committee_name", "").strip()
+            if not committee_name:
+                flash("Enter your name — it's recorded against what you sign out and the requests you take on.", "error")
+                return render_template("login.html")
             if secrets.compare_digest(password, app.config["COMMITTEE_PASSWORD"]):
                 session["is_committee"] = True
-                # Shown against sign-outs/collections this session processes
-                # (see _create_signout) - falls back to the generic
-                # "Committee" label if left blank, same as before this field
-                # existed.
-                session["committee_name"] = request.form.get("committee_name", "").strip() or "Committee"
+                session["committee_name"] = committee_name
                 _clear_login_attempts(client_ip)
                 flash("Logged in.", "success")
-                return redirect(_safe_next_url(request.args.get("next")) or url_for("sign_in_out"))
+                response = redirect(_safe_next_url(request.args.get("next")) or url_for("sign_in_out"))
+                # Remembered on this device so the name is pre-filled next time.
+                response.set_cookie(
+                    "committee_name",
+                    committee_name,
+                    max_age=365 * 24 * 3600,
+                    httponly=True,
+                    samesite="Lax",
+                    secure=app.config["SESSION_COOKIE_SECURE"],
+                )
+                return response
 
             _record_failed_login(client_ip)
             if _login_locked_until(client_ip):
@@ -1411,11 +1796,22 @@ def register_routes(app):
             reverse=True,
         )[:SIGN_OUT_HISTORY_LIMIT]
         racks = Rack.query.order_by(Rack.name).all()
+        recently_returned = (
+            SignOut.query.filter(
+                SignOut.signed_in_at >= utcnow() - timedelta(minutes=15),
+                SignOut.rack_loan_id.is_(None),
+                SignOut.signed_in_at != SignOut.signed_out_at,
+            )
+            .order_by(SignOut.signed_in_at.desc())
+            .all()
+        )
         return render_template(
             "sign_in_out.html",
             manual_category_cards=manual_category_cards,
             ready_for_collection=ready_for_collection,
-            active_sign_outs=active_sign_outs,
+            loan_groups=_loans_by_borrower(active_sign_outs),
+            recently_returned=recently_returned,
+            unrecorded_out=_unrecorded_out(),
             sign_out_history=sign_out_history,
             racks=[(rack, _rack_blockers(rack)) for rack in racks],
             borrower_names=_borrower_names(),
@@ -1429,8 +1825,9 @@ def register_routes(app):
         from the category-card grid on sign_in_out() - see the comment
         there for why this isn't all shown on one page any more."""
         category = db.get_or_404(Category, category_id)
+        # Variants are signed out from inside their group's row.
         items = (
-            KitItem.query.filter_by(active=True, rack_id=None)
+            KitItem.query.filter_by(active=True, rack_id=None, group_id=None)
             .join(Subcategory)
             .filter(Subcategory.category_id == category.id)
             .order_by(KitItem.name)
@@ -1464,11 +1861,12 @@ def register_routes(app):
         borrower_name = request.form.get("borrower_name", "").strip()
 
         due_date, due_error = _due_date_from_form()
+        gear_unit, serial_error = _serial_from_form(item, request.form.get("serial"))
 
         if item.rack_id:
             flash(f"'{item.name}' is part of the {item.rack.name} rack — sign out the whole rack instead.", "error")
-        elif due_error:
-            flash(due_error, "error")
+        elif due_error or serial_error:
+            flash(due_error or serial_error, "error")
         elif not borrower_name:
             flash("Borrower name is required.", "error")
         elif quantity is None:
@@ -1488,6 +1886,8 @@ def register_routes(app):
                     request.form.get("notes", "").strip(),
                     session.get("committee_name", "Committee"),
                     due_date=due_date,
+                    borrower_email=request.form.get("borrower_email", "").strip() or None,
+                    gear_unit=gear_unit,
                 )
                 db.session.commit()
                 flash(f"Signed out {quantity} x {item.name} to {borrower_name}, due back {due_date:%d %b}.", "success")
@@ -1555,16 +1955,125 @@ def register_routes(app):
         flash(f"Signed out {total} x {group.name} to {borrower_name} ({summary}).", "success")
         return redirect(back_to)
 
+    @app.route("/sign-in/unrecorded/<int:item_id>", methods=["POST"])
+    @login_required
+    def sign_in_unrecorded(item_id):
+        item = db.get_or_404(KitItem, item_id)
+        quantity = parse_positive_int(request.form.get("quantity"))
+        if quantity is None:
+            flash("Enter a quantity of at least 1.", "error")
+        elif _return_unrecorded(item, quantity, session.get("committee_name", "Committee")):
+            db.session.commit()
+            flash(f"Signed in {quantity} x {item.name} (no loan record).", "success")
+        else:
+            db.session.rollback()
+            flash(
+                f"Can't sign in {quantity} x {item.name} - that's more than is out without a loan record.",
+                "error",
+            )
+        return redirect(url_for("sign_in_out", show="unrecorded") + "#unrecorded")
+
     @app.route("/sign-in/<int:signout_id>", methods=["POST"])
     @login_required
     def sign_in_item(signout_id):
         signout = db.get_or_404(SignOut, signout_id)
+        quantity = parse_positive_int(request.form.get("quantity")) or signout.quantity
         if signout.rack_loan_id:
             flash(f"That's part of the {signout.rack_loan.rack.name} rack — sign the whole rack in.", "error")
+        elif quantity > signout.quantity:
+            flash(f"Only {signout.quantity} of that loan is out.", "error")
+        elif quantity < signout.quantity:
+            if _return_part(signout, quantity, session.get("committee_name", "Committee")):
+                db.session.commit()
+                flash(
+                    f"Signed in {quantity} x {signout.item.name} from {signout.borrower_name} "
+                    f"— {signout.quantity} still out.",
+                    "success",
+                )
         elif _return_signout(signout):
             db.session.commit()
             flash(f"Signed in {signout.quantity} x {signout.item.name} from {signout.borrower_name}.", "success")
-        return redirect(url_for("sign_in_out"))
+        return redirect(url_for("sign_in_out") + "#loans")
+
+    @app.route("/sign-in/many", methods=["POST"])
+    @login_required
+    def sign_in_many():
+        ids = [i for i in (parse_positive_int(raw) for raw in request.form.getlist("signout_id")) if i]
+        returned = 0
+        for signout in SignOut.query.filter(SignOut.id.in_(ids), SignOut.rack_loan_id.is_(None)).all():
+            returned += _return_signout(signout)
+        db.session.commit()
+        flash(f"Signed in {returned} loan{'s' if returned != 1 else ''}.", "success" if returned else "error")
+        return redirect(url_for("sign_in_out") + "#loans")
+
+    @app.route("/sign-in/<int:signout_id>/undo", methods=["POST"])
+    @login_required
+    def undo_sign_in(signout_id):
+        signout = db.get_or_404(SignOut, signout_id)
+        if _undo_return(signout):
+            db.session.commit()
+            flash(f"Undone — {signout.quantity} x {signout.item.name} is back out with {signout.borrower_name}.", "success")
+        else:
+            db.session.rollback()
+            flash("Couldn't undo that — it's already out again or the stock has gone.", "error")
+        return redirect(url_for("sign_in_out") + "#loans")
+
+    @app.route("/sign-out/multi", methods=["GET", "POST"])
+    @login_required
+    def sign_out_multi():
+        items = (
+            KitItem.query.filter_by(active=True, rack_id=None)
+            .join(Subcategory)
+            .join(Category)
+            .order_by(Category.name, KitItem.name)
+            .all()
+        )
+        if request.method == "POST":
+            borrower_name = request.form.get("borrower_name", "").strip()
+            borrower_email = request.form.get("borrower_email", "").strip()
+            notes = request.form.get("notes", "").strip()
+            due_date, due_error = _due_date_from_form()
+            wanted = {}
+            for raw_id, raw_qty in zip(request.form.getlist("item_id"), request.form.getlist("quantity")):
+                item_id = parse_positive_int(raw_id)
+                if not item_id:
+                    continue
+                quantity = parse_positive_int(raw_qty)
+                if quantity is None:
+                    flash("Every chosen item needs a quantity of at least 1.", "error")
+                    return render_template("sign_out_multi.html", items=items, borrower_names=_borrower_names(), form=request.form)
+                wanted[item_id] = wanted.get(item_id, 0) + quantity
+            error = None
+            if not borrower_name:
+                error = "Borrower name is required."
+            elif borrower_email and not EMAIL_RE.match(borrower_email):
+                error = "That email address doesn't look right."
+            elif due_error:
+                error = due_error
+            elif not wanted:
+                error = "Choose at least one item."
+            if error:
+                flash(error, "error")
+                return render_template("sign_out_multi.html", items=items, borrower_names=_borrower_names(), form=request.form)
+            checked_out_by = session.get("committee_name", "Committee")
+            try:
+                for item_id, quantity in wanted.items():
+                    item = db.session.get(KitItem, item_id)
+                    if not item or not item.active or item.rack_id:
+                        abort(404)
+                    _create_signout(
+                        item, quantity, borrower_name, notes, checked_out_by,
+                        due_date=due_date, borrower_email=borrower_email or None,
+                    )
+                db.session.commit()
+            except InsufficientStockError as e:
+                db.session.rollback()
+                flash(f"Only {e.item.quantity_available} of '{e.item.name}' available — nothing was signed out.", "error")
+                return render_template("sign_out_multi.html", items=items, borrower_names=_borrower_names(), form=request.form)
+            total = sum(wanted.values())
+            flash(f"Signed out {total} item{'s' if total != 1 else ''} to {borrower_name}, due back {due_date:%d %b}.", "success")
+            return redirect(url_for("sign_in_out"))
+        return render_template("sign_out_multi.html", items=items, borrower_names=_borrower_names(), form={})
 
     @app.route("/racks/<int:rack_id>/sign-out", methods=["POST"])
     @login_required
@@ -1651,10 +2160,16 @@ def register_routes(app):
             "resolved": ItemRequest.query.filter(ItemRequest.status != "pending").count(),
             "taken_out": SignOut.query.filter_by(signed_in_at=None).count(),
         }
+        addable = build_kit_entries(
+            KitItem.query.filter_by(active=True, group_id=None, rack_id=None).all(),
+            [group for group in ItemGroup.query.all() if group.active_items],
+        )
         return render_template(
             "admin.html",
             pending_groups=group_pending_requests(pending_requests),
             counts=counts,
+            addable=addable,
+            open_group=request.args.get("open"),
             active_tab="pending",
         )
 
@@ -2238,45 +2753,168 @@ def register_routes(app):
         )
         return render_template("admin_resolved.html", resolved_requests=resolved_requests, active_tab="resolved")
 
-    @app.route("/admin/requests/<int:request_id>/<action>", methods=["POST"])
-    @login_required
-    def resolve_request(request_id, action):
-        if action not in ("approve", "deny"):
-            flash("Unknown action.", "error")
-            return redirect(url_for("admin"))
+    def _claim_lines(lines, from_status, values_for):
+        """Move each line still in from_status to new values in one guarded
+        UPDATE apiece, so a double-tap or two committee members acting at
+        once can't both win. Returns False (caller rolls back) if any lost."""
+        for line in lines:
+            result = db.session.execute(
+                ItemRequest.__table__.update()
+                .where(ItemRequest.id == line.id, ItemRequest.status == from_status)
+                .values(**values_for(line))
+            )
+            if result.rowcount != 1:
+                return False
+        return True
 
-        item_request = db.get_or_404(ItemRequest, request_id)
-        status = "approved" if action == "approve" else "denied"
-        # Only a pending request can be resolved - a double-tap or a stale tab
-        # must not flip a request that's already approved (or collected).
+    @app.route("/admin/requests/<request_group>/accept", methods=["POST"])
+    @login_required
+    def accept_request(request_group):
+        lines = request_lines(request_group)
+        pending = [line for line in lines if line.status == "pending"]
+        if not pending:
+            flash(f"That request from {lines[0].requester_name} was already dealt with.", "error")
+            return redirect(url_for("admin"))
+        note = request.form.get("handover_note", "").strip()
+        if not note:
+            flash("Add a handover note so the member knows when and where to collect.", "error")
+            return redirect(url_for("admin", open=request_group) + f"#req-{request_group}")
+        approved = {}
+        for line in pending:
+            raw = (request.form.get(f"approved_{line.id}") or "").strip()
+            quantity = 0 if raw == "0" else parse_positive_int(raw)
+            if quantity is None or quantity > line.quantity:
+                flash(f"Give between 0 and {line.quantity} for {line.item_name}.", "error")
+                return redirect(url_for("admin", open=request_group) + f"#req-{request_group}")
+            approved[line.id] = quantity
+        if not any(approved.values()):
+            flash("Nothing would be handed over — use Deny instead, with a reason.", "error")
+            return redirect(url_for("admin", open=request_group) + f"#req-{request_group}")
+
+        now = utcnow()
+        name = session.get("committee_name", "Committee")
+
+        def values_for(line):
+            common = {"claimed_by": name, "handover_note": note, "resolved_at": now}
+            if approved[line.id] == 0:
+                return {**common, "status": "denied", "deny_reason": "None available"}
+            return {**common, "status": "approved", "approved_quantity": approved[line.id]}
+
+        if not _claim_lines(pending, "pending", values_for):
+            db.session.rollback()
+            flash("Someone else just dealt with that request — check it below.", "error")
+            return redirect(url_for("admin"))
+        db.session.commit()
+        lines = request_lines(request_group)
+        send_request_email("update", lines, subject="Your CUMC kit request has been approved")
+        flash(f"Accepted {lines[0].requester_name}'s request — they've been emailed your note.", "success")
+        return redirect(url_for("admin"))
+
+    @app.route("/admin/requests/<request_group>/deny", methods=["POST"])
+    @login_required
+    def deny_request(request_group):
+        lines = request_lines(request_group)
+        pending = [line for line in lines if line.status == "pending"]
+        reason = request.form.get("deny_reason", "").strip()
+        if not pending:
+            flash(f"That request from {lines[0].requester_name} was already dealt with.", "error")
+        elif not reason:
+            flash("Give a short reason — it's emailed to the member.", "error")
+        else:
+            name = session.get("committee_name", "Committee")
+            values = {"status": "denied", "deny_reason": reason, "claimed_by": name, "resolved_at": utcnow()}
+            if _claim_lines(pending, "pending", lambda line: values):
+                db.session.commit()
+                send_request_email("update", request_lines(request_group), subject="Your CUMC kit request")
+                flash(f"Denied {lines[0].requester_name}'s request and emailed them the reason.", "success")
+            else:
+                db.session.rollback()
+                flash("Someone else just dealt with that request — check it below.", "error")
+        return redirect(url_for("admin"))
+
+    @app.route("/admin/requests/<request_group>/add-item", methods=["POST"])
+    @login_required
+    def add_request_item(request_group):
+        lines = request_lines(request_group)
+        first = lines[0]
+        quantity = parse_positive_int(request.form.get("quantity"))
+        kind, _, raw_id = (request.form.get("entry") or "").partition(":")
+        entry_id = parse_positive_int(raw_id)
+        target = None
+        if kind == "item" and entry_id:
+            target = db.session.get(KitItem, entry_id)
+            target = target if target and target.active and target.rack_id is None else None
+        elif kind == "group" and entry_id:
+            target = db.session.get(ItemGroup, entry_id)
+            target = target if target and target.active_items else None
+        if any(line.status != "pending" for line in lines):
+            flash("Items can only be added while the whole request is pending.", "error")
+        elif target is None:
+            flash("Choose an item to add.", "error")
+        elif quantity is None:
+            flash("Enter a quantity of at least 1.", "error")
+        else:
+            db.session.add(
+                ItemRequest(
+                    requester_name=first.requester_name,
+                    requester_email=first.requester_email,
+                    item_name=target.name,
+                    quantity=quantity,
+                    message=first.message,
+                    request_group=first.request_group,
+                    group_id=target.id if kind == "group" else None,
+                    needed_from=first.needed_from,
+                    needed_to=first.needed_to,
+                    status_token=first.status_token,
+                )
+            )
+            db.session.commit()
+            flash(f"Added {quantity} x {target.name} to {first.requester_name}'s request.", "success")
+        return redirect(url_for("admin", open=request_group) + f"#req-{request_group}")
+
+    @app.route("/admin/requests/<request_group>/dates", methods=["POST"])
+    @login_required
+    def change_request_dates(request_group):
+        lines = request_lines(request_group)
+        needed_from = parse_date(request.form.get("needed_from"))
+        needed_to = parse_date(request.form.get("needed_to"))
+        open_lines = [
+            line for line in lines
+            if line.status == "pending" or (line.status == "approved" and not line.fulfilled_signout_id)
+        ]
+        if not needed_from or not needed_to or needed_to < needed_from:
+            flash("Choose a need-by date and a return date on or after it.", "error")
+        elif not open_lines:
+            flash("Nothing left on that request to change.", "error")
+        else:
+            for line in open_lines:
+                line.needed_from, line.needed_to = needed_from, needed_to
+            db.session.commit()
+            flash(f"Updated the dates on {lines[0].requester_name}'s request.", "success")
+        return redirect(request.referrer or url_for("admin"))
+
+    @app.route("/admin/requests/<request_group>/cancel", methods=["POST"])
+    @login_required
+    def cancel_request(request_group):
+        lines = request_lines(request_group)
+        uncollected = [line for line in lines if line.status == "approved" and not line.fulfilled_signout_id]
+        if not uncollected:
+            flash("Nothing on that request is waiting to be collected.", "error")
+            return redirect(request.referrer or url_for("sign_in_out"))
         result = db.session.execute(
             ItemRequest.__table__.update()
-            .where(ItemRequest.id == item_request.id, ItemRequest.status == "pending")
-            .values(status=status, resolved_at=utcnow())
+            .where(
+                ItemRequest.id.in_([line.id for line in uncollected]),
+                ItemRequest.status == "approved",
+                ItemRequest.fulfilled_signout_id.is_(None),
+            )
+            .values(status="cancelled", resolved_at=utcnow())
         )
         db.session.commit()
-        if result.rowcount == 1:
-            flash(f"Request from {item_request.requester_name} {status}.", "success")
-        else:
-            flash(f"That request from {item_request.requester_name} was already resolved.", "error")
-        return redirect(url_for("admin"))
-
-    @app.route("/admin/requests/group/<request_group>/<action>", methods=["POST"])
-    @login_required
-    def resolve_request_group(request_group, action):
-        if action not in ("approve", "deny"):
-            flash("Unknown action.", "error")
-            return redirect(url_for("admin"))
-
-        items = ItemRequest.query.filter_by(request_group=request_group, status="pending").all()
-        status = "approved" if action == "approve" else "denied"
-        for item_request in items:
-            item_request.status = status
-            item_request.resolved_at = utcnow()
-        db.session.commit()
-        if items:
-            flash(f"{len(items)} item(s) from {items[0].requester_name}'s request {status}.", "success")
-        return redirect(url_for("admin"))
+        if result.rowcount:
+            send_request_email("update", request_lines(request_group), subject="Your CUMC kit request was cancelled")
+            flash(f"Cancelled {lines[0].requester_name}'s request and emailed them.", "success")
+        return redirect(request.referrer or url_for("sign_in_out"))
 
     @app.route("/admin/requests/<int:request_id>/collect", methods=["POST"])
     @login_required
@@ -2289,6 +2927,8 @@ def register_routes(app):
         # Resolved Requests, so send the committee back to whichever page they
         # actually clicked from instead of always landing on Resolved Requests.
         back_to = request.referrer or url_for("admin_resolved")
+        # Errors land back on Sign In/Out with this request's panel still open.
+        retry_to = url_for("sign_in_out", open=request_id) + f"#collect-{request_id}"
 
         if item_request.status != "approved":
             flash("Only approved requests can be marked as collected.", "error")
@@ -2299,7 +2939,7 @@ def register_routes(app):
         due_date, due_error = _due_date_from_form()
         if due_error:
             flash(due_error, "error")
-            return redirect(back_to)
+            return redirect(retry_to)
 
         if item_request.group_id:
             # A group request (e.g. "Nuts") doesn't name one specific KitItem,
@@ -2314,7 +2954,7 @@ def register_routes(app):
             )
             if error:
                 flash(error, "error")
-                return redirect(back_to)
+                return redirect(retry_to)
 
             total = sum(quantity for _, quantity in splits)
             if not splits:
@@ -2322,14 +2962,14 @@ def register_routes(app):
                     f"Choose which specific item(s) to hand over for '{item_request.item_name}'.",
                     "error",
                 )
-                return redirect(back_to)
-            if total != item_request.quantity:
+                return redirect(retry_to)
+            if total != item_request.handover_quantity:
                 flash(
-                    f"Chosen quantities add up to {total}, but {item_request.requester_name} asked for "
-                    f"{item_request.quantity} x {item_request.item_name} — adjust so they match exactly.",
+                    f"Chosen quantities add up to {total}, but {item_request.requester_name} was approved for "
+                    f"{item_request.handover_quantity} x {item_request.item_name} — adjust so they match exactly.",
                     "error",
                 )
-                return redirect(back_to)
+                return redirect(retry_to)
 
             checked_out_by = session.get("committee_name", "Committee")
             first_signout_id = None
@@ -2381,7 +3021,11 @@ def register_routes(app):
             )
             return redirect(back_to)
 
-        if item_request.quantity > item.quantity_available:
+        gear_unit, serial_error = _serial_from_form(item, request.form.get("serial"))
+        if serial_error:
+            flash(serial_error, "error")
+            return redirect(retry_to)
+        if item_request.handover_quantity > item.quantity_available:
             flash(
                 f"Only {item.quantity_available} of '{item.name}' available right now — "
                 "adjust the loan or sign it out manually.",
@@ -2392,12 +3036,13 @@ def register_routes(app):
         try:
             signout = _create_signout(
                 item,
-                item_request.quantity,
+                item_request.handover_quantity,
                 item_request.requester_name,
                 item_request.message,
                 session.get("committee_name", "Committee"),
                 due_date=due_date,
                 borrower_email=item_request.requester_email,
+                gear_unit=gear_unit,
             )
             db.session.flush()  # populate signout.id before we link it below
             if not _claim_request_collection(item_request, signout.id):
@@ -2414,7 +3059,7 @@ def register_routes(app):
             )
             return redirect(back_to)
         flash(
-            f"Signed out {item_request.quantity} x {item.name} to {item_request.requester_name} "
+            f"Signed out {item_request.handover_quantity} x {item.name} to {item_request.requester_name} "
             "and marked the request as collected.",
             "success",
         )
@@ -2469,10 +3114,18 @@ def register_routes(app):
     @gear_required
     def gear_register():
         show = request.args.get("show", "all")
+        query = request.args.get("q", "").strip()
+        if query:
+            exact = GearUnit.query.filter(func.lower(GearUnit.serial) == query.lower()).first()
+            if exact:
+                return redirect(url_for("gear_unit", unit_id=exact.id))
         units = GearUnit.query.join(KitItem).order_by(KitItem.name, GearUnit.serial).all()
         in_service = [unit for unit in units if unit.in_service]
-        needing_action = [unit for unit in in_service if unit.flags()]
-        if show == "retired":
+        needing_action = sorted((unit for unit in in_service if unit.flags()), key=lambda unit: not unit.past_lifespan)
+        if query:
+            show = "search"
+            listed = [unit for unit in units if query.lower() in unit.serial.lower()]
+        elif show == "retired":
             listed = [unit for unit in units if not unit.in_service]
         elif show == "action":
             listed = needing_action
@@ -2486,6 +3139,8 @@ def register_routes(app):
             "gear_register.html",
             groups=groups,
             show=show,
+            query=query,
+            to_inspect=len(_inspection_queue()[0]),
             counts={"all": len(in_service), "action": len(needing_action), "retired": len(units) - len(in_service)},
             gear_tab="register",
         )
@@ -2542,12 +3197,22 @@ def register_routes(app):
                 db.session.commit()
                 note = " Manufacture date decoded from the serial — check it against the label." if source == "decoded" else ""
                 flash(f"Registered {serial} ({item.name}).{note}", "success")
+                if request.form.get("another"):
+                    return redirect(
+                        url_for(
+                            "add_gear_unit",
+                            item_id=item.id,
+                            brand=brand,
+                            purchase_date=request.form.get("purchase_date") or None,
+                        )
+                    )
                 return redirect(url_for("gear_unit", unit_id=unit.id))
         return render_template(
             "gear_unit_form.html",
             items=_trackable_items(),
             brands=serial_dates.BRANDS,
-            grades=INSPECTION_GRADES,
+            grades={k: v for k, v in INSPECTION_GRADES.items() if k != "retire"},
+            keep=request.form if request.method == "POST" else request.args,
             gear_tab="add",
         )
 
@@ -2556,7 +3221,11 @@ def register_routes(app):
     def gear_unit(unit_id):
         unit = db.get_or_404(GearUnit, unit_id)
         return render_template(
-            "gear_unit.html", unit=unit, grades=INSPECTION_GRADES, brands=serial_dates.BRANDS, gear_tab="register"
+            "gear_unit.html",
+            unit=unit,
+            grades={k: v for k, v in INSPECTION_GRADES.items() if k != "retire"},
+            brands=serial_dates.BRANDS,
+            gear_tab="register",
         )
 
     @app.route("/gear/units/<int:unit_id>/edit", methods=["POST"])
@@ -2590,33 +3259,113 @@ def register_routes(app):
         elif not grade:
             flash("Choose a condition grade.", "error")
         else:
-            db.session.add(
-                Inspection(
-                    unit_id=unit.id,
-                    grade=grade,
-                    notes=request.form.get("notes", "").strip() or None,
-                    inspected_by=session.get("gear_name"),
-                )
-            )
-            message = f"Recorded '{INSPECTION_GRADES[grade]}' for {unit.serial}."
-            if grade == "retire":
-                message += " It's now retired." + _retire_unit(unit, bool(request.form.get("reduce_stock")))
+            flash(_record_grade(unit, grade, request.form), "success")
             db.session.commit()
-            flash(message, "success")
         return redirect(url_for("gear_unit", unit_id=unit.id))
+
+    def _record_grade(unit, grade, form):
+        """Log an inspection, or retire the piece (keeping its last real
+        grade). Returns the message to flash; caller commits."""
+        notes = form.get("notes", "").strip() or None
+        if grade == "retire":
+            stock = _retire_unit(unit, bool(form.get("reduce_stock")), reason=notes)
+            return f"Retired {unit.serial}.{stock}"
+        db.session.add(Inspection(unit_id=unit.id, grade=grade, notes=notes, inspected_by=session.get("gear_name")))
+        return f"Recorded '{INSPECTION_GRADES[grade]}' for {unit.serial}."
+
+    @app.route("/gear/units/<int:unit_id>/retire", methods=["POST"])
+    @gear_required
+    def retire_gear_unit(unit_id):
+        unit = db.get_or_404(GearUnit, unit_id)
+        if not unit.in_service:
+            flash(f"{unit.serial} is already retired.", "error")
+        elif not request.form.get("notes", "").strip():
+            flash("Say why it's being retired.", "error")
+        else:
+            flash(_record_grade(unit, "retire", request.form), "success")
+            db.session.commit()
+        return redirect(url_for("gear_unit", unit_id=unit.id))
+
+    @app.route("/gear/inspect")
+    @gear_required
+    def gear_inspect():
+        queue, total = _inspection_queue()
+        current = queue[0] if queue else None
+        wanted = parse_positive_int(request.args.get("unit"))
+        if wanted:
+            current = next((unit for unit in queue if unit.id == wanted), current)
+        by_item = {}
+        for unit in queue:
+            by_item.setdefault(unit.item, []).append(unit)
+        return render_template(
+            "gear_inspect.html",
+            current=current,
+            remaining=len(queue),
+            total=total,
+            by_item=sorted(by_item.items(), key=lambda kv: kv[0].name),
+            gear_tab="inspect",
+        )
+
+    @app.route("/gear/inspect/<int:unit_id>", methods=["POST"])
+    @gear_required
+    def gear_inspect_unit(unit_id):
+        unit = db.get_or_404(GearUnit, unit_id)
+        grade = _parse_grade(request.form.get("grade"))
+        if not unit.in_service:
+            flash(f"{unit.serial} is already retired.", "error")
+        elif not grade:
+            flash("Choose a condition.", "error")
+        elif grade == "retire" and not request.form.get("notes", "").strip():
+            flash("Say why it's being retired.", "error")
+            return redirect(url_for("gear_inspect", unit=unit.id))
+        else:
+            flash(_record_grade(unit, grade, request.form), "success")
+            db.session.commit()
+        return redirect(url_for("gear_inspect"))
+
+    @app.route("/gear/inspect/item/<int:item_id>/all-good", methods=["POST"])
+    @gear_required
+    def gear_inspect_all_good(item_id):
+        item = db.get_or_404(KitItem, item_id)
+        if not request.form.get("confirm"):
+            flash("Tick the box to confirm you've checked every piece.", "error")
+            return redirect(url_for("gear_inspect"))
+        units = [unit for unit in _inspection_queue()[0] if unit.item_id == item.id]
+        for unit in units:
+            db.session.add(
+                Inspection(unit_id=unit.id, grade="good", notes="Checked in a batch", inspected_by=session.get("gear_name"))
+            )
+        db.session.commit()
+        flash(f"Marked {len(units)} {item.name} as Good.", "success")
+        return redirect(url_for("gear_inspect"))
 
     @app.route("/gear/settings", methods=["GET", "POST"])
     @gear_required
     def gear_settings():
         subcategories = Subcategory.query.join(Category).order_by(Category.name, Subcategory.name).all()
         if request.method == "POST":
+            if request.form.get("ppe_defaults"):
+                changed = apply_ppe_defaults()
+                db.session.commit()
+                flash(f"Turned on PPE tracking for {changed} subcategor{'y' if changed == 1 else 'ies'}.", "success")
+                return redirect(url_for("gear_settings"))
+            # Only rows shown on the page are posted (tracked ones, plus any added).
             for sub in subcategories:
-                sub.track_serials = bool(request.form.get(f"track_{sub.id}"))
-                sub.max_age_years = parse_positive_int(request.form.get(f"max_age_{sub.id}"))
+                if f"max_age_{sub.id}" in request.form:
+                    sub.track_serials = bool(request.form.get(f"track_{sub.id}"))
+                    sub.max_age_years = parse_positive_int(request.form.get(f"max_age_{sub.id}"))
+            added = db.session.get(Subcategory, parse_positive_int(request.form.get("add_subcategory")) or 0)
+            if added:
+                added.track_serials = True
             db.session.commit()
             flash("Saved register settings.", "success")
             return redirect(url_for("gear_settings"))
-        return render_template("gear_settings.html", subcategories=subcategories, gear_tab="settings")
+        return render_template(
+            "gear_settings.html",
+            tracked=[sub for sub in subcategories if sub.track_serials],
+            untracked=[sub for sub in subcategories if not sub.track_serials],
+            gear_tab="settings",
+        )
 
     @app.route("/gear/import", methods=["GET", "POST"])
     @gear_required
@@ -2679,9 +3428,9 @@ def register_routes(app):
     @app.route("/gear/export.csv")
     @gear_required
     def gear_export():
-        rows = [REGISTER_CSV_COLUMNS + ["status", "last_inspected"]]
+        rows = [REGISTER_CSV_COLUMNS + ["status", "last_inspected", "retired_reason"]]
         for unit in GearUnit.query.join(KitItem).order_by(KitItem.name, GearUnit.serial):
-            latest = unit.latest_inspection
+            latest = unit.latest_grade_inspection
             rows.append(
                 [
                     _csv_safe(value)
@@ -2695,6 +3444,7 @@ def register_routes(app):
                         unit.notes,
                         "retired" if not unit.in_service else "in service",
                         latest.inspected_at.date().isoformat() if latest else "",
+                        unit.retired_reason,
                     )
                 ]
             )

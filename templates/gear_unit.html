@@ -5,12 +5,13 @@
   <h1>{{ unit.serial }}</h1>
   {% include "_gear_nav.html" %}
 
-  {% set latest = unit.latest_inspection %}
+  {% set latest = unit.latest_grade_inspection %}
+  {% set loan = unit.open_loan %}
   <section class="card">
     <h2>{{ unit.item.name }}</h2>
     <dl class="detail-list">
       <dt>Status</dt>
-      <dd>{% if unit.in_service %}In service{% else %}<span class="badge badge-archived">Retired</span> {{ unit.retired_at.strftime('%d %b %Y') }}{% endif %}</dd>
+      <dd>{% if unit.in_service %}In service{% if loan %} &middot; <strong>out with {{ loan.borrower_name }}</strong> since {{ loan.signed_out_at.strftime('%d %b') }}{% endif %}{% else %}<span class="badge badge-archived">Retired</span> {{ unit.retired_at.strftime('%d %b %Y') }}{% if unit.retired_reason %} &mdash; {{ unit.retired_reason }}{% endif %}{% endif %}</dd>
       <dt>Condition</dt>
       <dd>{% if latest %}<span class="badge grade-{{ latest.grade }}">{{ latest.grade_label }}</span> <small class="muted">{{ latest.inspected_at.strftime('%d %b %Y') }}</small>{% else %}Not inspected yet{% endif %}</dd>
       <dt>Brand</dt><dd>{{ unit.brand or '—' }}</dd>
@@ -24,13 +25,13 @@
       <dt>Purchased</dt><dd>{{ unit.purchase_date.strftime('%d %b %Y') if unit.purchase_date else '—' }}</dd>
       {% if unit.notes %}<dt>Notes</dt><dd>{{ unit.notes }}</dd>{% endif %}
     </dl>
-    {% for flag in unit.flags() if not unit.latest_inspection or flag != unit.latest_inspection.grade_label %}<span class="badge badge-out">{{ flag }}</span> {% endfor %}
+    {% for flag in unit.flags() if not latest or flag != latest.grade_label %}<span class="badge badge-out">{{ flag }}</span> {% endfor %}
   </section>
 
   {% if unit.in_service %}
   <section class="card card-action">
     <h2>Record Inspection</h2>
-    <form method="post" action="{{ url_for('inspect_gear_unit', unit_id=unit.id) }}" class="js-retire-toggle">
+    <form method="post" action="{{ url_for('inspect_gear_unit', unit_id=unit.id) }}">
       {{ csrf_field() }}
       <fieldset class="grade-options">
         <legend>Condition</legend>
@@ -40,10 +41,20 @@
       </fieldset>
       <label for="inspect-notes">What did you find?</label>
       <textarea id="inspect-notes" name="notes" rows="3" placeholder="e.g. sheath fuzzing near the middle mark"></textarea>
-      <label class="check-option js-retire-only" hidden><input type="checkbox" name="reduce_stock" value="1" checked> Also remove it from {{ unit.item.name }} stock</label>
       <button type="submit" class="btn btn-primary">Save Inspection</button>
     </form>
   </section>
+
+  <details class="card card-log">
+    <summary><h2>Retire This Piece</h2></summary>
+    <form method="post" action="{{ url_for('retire_gear_unit', unit_id=unit.id) }}">
+      {{ csrf_field() }}
+      <label for="retire-reason">Why is it being retired?</label>
+      <input type="text" id="retire-reason" name="notes" required placeholder="e.g. Core shot after a fall">
+      <label class="check-option"><input type="checkbox" name="reduce_stock" value="1" checked> Also remove it from {{ unit.item.name }} stock</label>
+      <button type="submit" class="btn btn-danger">Retire {{ unit.serial }}</button>
+    </form>
+  </details>
   {% endif %}
 
   <section class="card">

@@ -1,0 +1,8 @@
+{% extends "email/_layout.html" %}
+{% block body %}
+  <p style="margin:0 0 16px;font-size:16px;">Hi {{ first.requester_name }},</p>
+  <p style="margin:0 0 20px;font-size:16px;line-height:1.5;">We've got your kit request for {{ first.needed_from.strftime('%a %d %b') }} to {{ first.needed_to.strftime('%a %d %b') }}. A committee member will reply with when and where to collect.</p>
+  {% include "email/_request_lines.html" %}
+  <p style="margin:24px 0 0;font-size:16px;"><a href="{{ status_url }}" style="color:#bc1016;font-weight:600;">Track or cancel your request</a></p>
+  <p style="margin:12px 0 0;font-size:14px;color:#6e6e73;line-height:1.5;">Need to change something? Just reply to this email.</p>
+{% endblock %}

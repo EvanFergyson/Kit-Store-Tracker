@@ -298,3 +298,71 @@ def test_settings_save(client, app, harness):
     with app.app_context():
         sub = db.session.get(Subcategory, harness["sub"])
         assert (sub.track_serials, sub.max_age_years) == (False, 12)
+
+
+# --- search, inspection mode, retiring, settings ------------------------------
+
+def test_exact_serial_search_opens_unit(client, app, harness):
+    token = gear_login(client)
+    _add_unit(client, token, harness["item"], "FIND-123")
+    unit_id, *_ = _unit(app, "FIND-123")
+    assert client.get("/gear?q=find-123").headers["Location"] == f"/gear/units/{unit_id}"
+    assert b"FIND-123" in client.get("/gear?q=123").data
+
+
+def test_save_and_add_another_keeps_item(client, app, harness):
+    token = gear_login(client)
+    response = client.post(
+        "/gear/units/add",
+        data={"item_id": harness["item"], "serial": "AA-1", "brand": "DMM", "another": "1", "csrf_token": token},
+    )
+    assert response.headers["Location"].startswith("/gear/units/add?")
+    page = client.get(response.headers["Location"]).get_data(as_text=True)
+    assert f'value="{harness["item"]}" selected' in page and 'value="DMM" selected' in page
+
+
+def test_inspection_mode_records_and_moves_on(client, app, harness):
+    token = gear_login(client)
+    _add_unit(client, token, harness["item"], "IN-1")
+    _add_unit(client, token, harness["item"], "IN-2")
+    first, *_ = _unit(app, "IN-1")
+    page = client.get("/gear/inspect").get_data(as_text=True)
+    assert "IN-1" in page and "0 of 2" in page
+    client.post(f"/gear/inspect/{first}", data={"grade": "good", "csrf_token": token})
+    page = client.get("/gear/inspect").get_data(as_text=True)
+    assert "1 of 2" in page and "IN-2" in page
+    client.post(f"/gear/inspect/item/{harness['item']}/all-good", data={"confirm": "1", "csrf_token": token})
+    assert "All done" in client.get("/gear/inspect").get_data(as_text=True)
+
+
+def test_retire_keeps_last_real_grade(client, app, harness):
+    token = gear_login(client)
+    _add_unit(client, token, harness["item"], "RT-1", grade="minor_wear")
+    unit_id, *_ = _unit(app, "RT-1")
+    response = client.post(f"/gear/units/{unit_id}/retire", data={"notes": "", "csrf_token": token}, follow_redirects=True)
+    assert b"Say why" in response.data
+    client.post(f"/gear/units/{unit_id}/retire", data={"notes": "Fall factor 2", "csrf_token": token})
+    with app.app_context():
+        unit = db.session.get(GearUnit, unit_id)
+        assert (unit.status, unit.retired_reason, unit.latest_grade_inspection.grade) == (
+            "retired", "Fall factor 2", "minor_wear"
+        )
+    body = client.get("/gear/export.csv").get_data(as_text=True)
+    assert "RT-1" in body and "Minor wear" in body and "Fall factor 2" in body
+
+
+def test_ppe_defaults_track_textiles_with_lifespan(app):
+    with app.app_context():
+        category = Category(name="PPE Test Category")
+        db.session.add(category)
+        db.session.flush()
+        sling = Subcategory(name="PPE Test Slings", category_id=category.id)
+        crab = Subcategory(name="PPE Test Locking carabiners", category_id=category.id)
+        book = Subcategory(name="PPE Test Guidebooks", category_id=category.id)
+        db.session.add_all([sling, crab, book])
+        db.session.flush()
+        app_module.apply_ppe_defaults()
+        assert (sling.track_serials, sling.max_age_years) == (True, 10)
+        assert (crab.track_serials, crab.max_age_years) == (True, None)
+        assert book.track_serials is False
+        db.session.rollback()

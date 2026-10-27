@@ -46,13 +46,18 @@ def _approved_request(app, quantity=1):
 @pytest.mark.parametrize("next_url", ["https://evil.example/", "//evil.example/", "/\\evil.example/"])
 def test_login_ignores_offsite_next(client, next_url):
     token = get_csrf_token(client, "/login")
-    response = client.post(f"/login?next={next_url}", data={"password": "test-only-password", "csrf_token": token})
+    response = client.post(
+        f"/login?next={next_url}",
+        data={"password": "test-only-password", "committee_name": "Sam", "csrf_token": token},
+    )
     assert response.headers["Location"] == "/sign-in-out"
 
 
 def test_login_follows_local_next(client):
     token = get_csrf_token(client, "/login")
-    response = client.post("/login?next=/admin", data={"password": "test-only-password", "csrf_token": token})
+    response = client.post(
+        "/login?next=/admin", data={"password": "test-only-password", "committee_name": "Sam", "csrf_token": token}
+    )
     assert response.headers["Location"] == "/admin"
 
 
@@ -62,10 +67,10 @@ def test_lockout_is_per_client_behind_proxy(client):
     token = get_csrf_token(client, "/login")
     attacker = {"X-Forwarded-For": "203.0.113.1"}
     for _ in range(app_module.LOGIN_MAX_ATTEMPTS):
-        client.post("/login", data={"password": "wrong", "csrf_token": token}, headers=attacker)
+        client.post("/login", data={"password": "wrong", "committee_name": "X", "csrf_token": token}, headers=attacker)
     response = client.post(
         "/login",
-        data={"password": "test-only-password", "csrf_token": token},
+        data={"password": "test-only-password", "committee_name": "Sam", "csrf_token": token},
         headers={"X-Forwarded-For": "203.0.113.2"},
         follow_redirects=True,
     )
@@ -74,10 +79,14 @@ def test_lockout_is_per_client_behind_proxy(client):
 
 def test_resolved_request_cannot_be_flipped(client, app, item_with_stock):
     request_id = _approved_request(app)
+    with app.app_context():
+        group = db.session.get(ItemRequest, request_id).request_group
     login(client)
     token = get_csrf_token(client, "/admin/categories")
-    response = client.post(f"/admin/requests/{request_id}/deny", data={"csrf_token": token}, follow_redirects=True)
-    assert b"already resolved" in response.data
+    response = client.post(
+        f"/admin/requests/{group}/deny", data={"deny_reason": "No", "csrf_token": token}, follow_redirects=True
+    )
+    assert b"already dealt with" in response.data
     with app.app_context():
         assert db.session.get(ItemRequest, request_id).status == "approved"
 

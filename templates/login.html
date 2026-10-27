@@ -6,10 +6,10 @@
     <form method="post">
       {{ csrf_field() }}
       <label for="committee_name">Your name</label>
-      <input type="text" id="committee_name" name="committee_name" placeholder="e.g. Alex" autofocus>
-      <p class="field-hint">Shown against anything you sign out or collect this session.</p>
+      <input type="text" id="committee_name" name="committee_name" placeholder="e.g. Alex" value="{{ request.cookies.get('committee_name', '') }}" required autocomplete="name"{% if not request.cookies.get('committee_name') %} autofocus{% endif %}>
+      <p class="field-hint">Recorded against what you sign out and the requests you accept. Remembered on this device.</p>
       <label for="password">Committee password</label>
-      <input type="password" id="password" name="password" required>
+      <input type="password" id="password" name="password" required{% if request.cookies.get('committee_name') %} autofocus{% endif %}>
       <button type="submit" class="btn btn-primary">Log In</button>
     </form>
   </section>

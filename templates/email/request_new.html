@@ -1,0 +1,13 @@
+{% extends "email/_layout.html" %}
+{% block body %}
+  {% if cancelled %}
+    <p style="margin:0 0 20px;font-size:16px;line-height:1.5;"><strong>{{ first.requester_name }}</strong> cancelled their kit request before anyone picked it up. Nothing to do.</p>
+  {% else %}
+    <p style="margin:0 0 8px;font-size:16px;line-height:1.5;"><strong>{{ first.requester_name }}</strong> ({{ first.requester_email }}) has asked for kit.</p>
+    <p style="margin:0 0 20px;font-size:16px;line-height:1.5;">Needed {{ first.needed_from.strftime('%a %d %b') }}, back by {{ first.needed_to.strftime('%a %d %b') }}.</p>
+  {% endif %}
+  {% set stock_check = not cancelled %}
+  {% include "email/_request_lines.html" %}
+  {% if first.message and not cancelled %}<p style="margin:20px 0 0;font-size:15px;line-height:1.5;">&ldquo;{{ first.message }}&rdquo;</p>{% endif %}
+  {% if not cancelled %}<p style="margin:24px 0 0;font-size:16px;"><a href="{{ admin_url }}" style="color:#bc1016;font-weight:600;">Accept or deny it</a></p>{% endif %}
+{% endblock %}

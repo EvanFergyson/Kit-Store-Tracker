@@ -1,32 +1,42 @@
 {% extends "base.html" %}
+{% from "_macros.html" import request_dates_form, serial_field %}
 {% block title %}Sign In / Out{% endblock %}
 {% block content %}
   <h1>Sign Kit In / Out</h1>
   {% include "_admin_nav.html" %}
 
+  {% if pending_count %}
+    <a class="notice-banner" href="{{ url_for('admin') }}">{{ pending_count }} request{{ 's' if pending_count != 1 else '' }} waiting for someone to accept &rarr;</a>
+  {% endif %}
+
   <section class="card card-action">
     <h2>Ready for Collection</h2>
-    <p class="empty-state">Approved requests waiting to be picked up &mdash; collecting one here signs it out automatically, no need to re-enter it below.</p>
+    <p class="empty-state">Approved requests waiting to be picked up &mdash; collecting one here signs it out automatically.</p>
     {% if ready_for_collection %}
+      {% set open_id = request.args.get('open', type=int) %}
       <table>
-        <thead><tr><th>Item</th><th>Qty</th><th>Requested By</th><th>Pickup</th><th></th></tr></thead>
+        <thead><tr><th>Item</th><th>Qty</th><th>For</th><th>Claimed</th><th></th></tr></thead>
         <tbody>
           {% for r in ready_for_collection %}
-          <tr>
-            <td>{{ r.item_name }}{% if r.group_id %} <span class="badge badge-group">Multiple options</span>{% endif %}</td>
-            <td data-label="Qty">{{ r.quantity }}</td>
-            <td data-label="Requested By">{{ r.requester_name }}</td>
-            <td data-label="Pickup">{{ r.pickup_display or '—' }}</td>
+          {% set due_default = r.needed_to if r.needed_to and r.needed_to >= today else default_due_date %}
+          <tr id="collect-{{ r.id }}">
+            <td>
+              {{ r.item_name }}{% if r.group_id %} <span class="badge badge-group">Multiple options</span>{% endif %}
+              {% if r.handover_note %}<br><small class="empty-state">&ldquo;{{ r.handover_note }}&rdquo;</small>{% endif %}
+            </td>
+            <td data-label="Qty">{{ r.handover_quantity }}</td>
+            <td data-label="For">{{ r.requester_name }}{% if r.needed_to %}<br><small>back {{ r.needed_to.strftime('%a %d %b') }}</small>{% endif %}</td>
+            <td data-label="Claimed">{{ r.claimed_by or '—' }}</td>
             <td>
               {% if r.group_id %}
                 {% set group = r.matching_group %}
                 {% set choices = group.active_items if group else [] %}
                 {% if choices %}
-                  <details class="sign-out-group-details">
-                    <summary class="btn btn-small btn-primary">Collect ({{ r.quantity }} needed)</summary>
-                    <form method="post" action="{{ url_for('collect_request', request_id=r.id) }}" class="sign-out-group-form" data-target-quantity="{{ r.quantity }}">
+                  <details class="sign-out-group-details"{% if open_id == r.id %} open{% endif %}>
+                    <summary class="btn btn-small btn-primary">Collect ({{ r.handover_quantity }} needed)</summary>
+                    <form method="post" action="{{ url_for('collect_request', request_id=r.id) }}" class="sign-out-group-form" data-target-quantity="{{ r.handover_quantity }}">
                       {{ csrf_field() }}
-                      <p class="empty-state">Split across as many as it takes to total {{ r.quantity }} exactly.</p>
+                      <p class="empty-state">Split across as many as it takes to total {{ r.handover_quantity }} exactly.</p>
                       {% for choice in choices %}
                         <div class="sign-out-group-row">
                           <span>{{ choice.name }} <small>({{ choice.quantity_available }} available)</small></span>
@@ -39,7 +49,7 @@
                       {% endfor %}
                       <p class="sign-out-group-total" aria-live="polite"></p>
                       <label for="collect-{{ r.id }}-due">Due back</label>
-                      <input type="date" id="collect-{{ r.id }}-due" name="due_date" value="{{ default_due_date.isoformat() }}" required>
+                      <input type="date" id="collect-{{ r.id }}-due" name="due_date" value="{{ due_default.isoformat() }}" required>
                       <button type="submit" class="btn btn-small btn-primary">Confirm Collection</button>
                     </form>
                   </details>
@@ -49,12 +59,21 @@
               {% elif r.matching_item %}
                 <form method="post" action="{{ url_for('collect_request', request_id=r.id) }}" class="sign-out-item-form">
                   {{ csrf_field() }}
-                  <input type="date" name="due_date" value="{{ default_due_date.isoformat() }}" required aria-label="Due back">
+                  <input type="date" name="due_date" value="{{ due_default.isoformat() }}" required aria-label="Due back">
+                  {{ serial_field(r.matching_item) }}
                   <button type="submit" class="btn btn-small btn-primary">Collect</button>
                 </form>
               {% else %}
                 <small class="empty-state">No matching item &mdash; sign out manually</small>
               {% endif %}
+              <details class="request-more">
+                <summary>Change or cancel</summary>
+                {{ request_dates_form(r.request_group, r.needed_from, r.needed_to) }}
+                <form method="post" action="{{ url_for('cancel_request', request_group=r.request_group) }}" onsubmit="return confirm('Cancel this whole request and email the member?');">
+                  {{ csrf_field() }}
+                  <button type="submit" class="btn btn-small btn-danger">Cancel Request</button>
+                </form>
+              </details>
             </td>
           </tr>
           {% endfor %}
@@ -123,7 +142,9 @@
 
   <section class="card card-action">
     <h2>Sign Out Manually</h2>
-    <p class="empty-state">For walk-ins or anything without a request on file. Choose a category, then sign out straight from its row.</p>
+    <p class="empty-state">For walk-ins or anything without a request on file.</p>
+    <p><a class="btn btn-primary" href="{{ url_for('sign_out_multi') }}">Sign Out Several Items to One Person</a></p>
+    <p class="field-hint">Or pick a category to sign out one thing at a time:</p>
     {% if manual_category_cards %}
       <div class="category-grid">
         {% for card in manual_category_cards %}
@@ -138,43 +159,103 @@
     {% endif %}
   </section>
 
-  <section class="card">
+  <section class="card" id="loans">
     <h2>Currently Signed Out</h2>
-    {% if active_sign_outs %}
-      <table>
-        <thead>
-          <tr>
-            <th>Item</th><th>Borrower</th><th>Qty</th><th>Signed Out</th><th>Due</th><th>Notes</th><th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for so in active_sign_outs %}
-          <tr>
-            <td>{{ so.item.name }}</td>
-            <td data-label="Borrower">{{ so.borrower_name }}</td>
-            <td data-label="Qty">{{ so.quantity }}</td>
-            <td data-label="Signed Out">
-              {{ so.signed_out_at.strftime('%d %b %Y %H:%M') }}
-              <br><small class="empty-state">{{ so.signed_out_at|relative_time }}</small>
-            </td>
-            <td{% if so.due_date %} data-label="Due"{% endif %}>
-              {% if so.due_date %}{{ so.due_date.strftime('%a %d %b') }}{% if so.is_overdue %} <span class="badge badge-denied">Overdue</span>{% endif %}{% endif %}
-            </td>
-            <td{% if so.notes %} data-label="Notes"{% endif %}>{{ so.notes or '' }}</td>
-            <td>
-              <form method="post" action="{{ url_for('sign_in_item', signout_id=so.id) }}">
+    {% if recently_returned %}
+      <div class="recent-returns">
+        <p class="field-hint">Just signed in &mdash; tap Undo if that was a mistake.</p>
+        {% for so in recently_returned %}
+          <form method="post" action="{{ url_for('undo_sign_in', signout_id=so.id) }}" class="recent-return">
+            {{ csrf_field() }}
+            <span>{{ so.quantity }} &times; {{ so.item.name }} &middot; {{ so.borrower_name }}</span>
+            <button type="submit" class="btn btn-small btn-secondary">Undo</button>
+          </form>
+        {% endfor %}
+      </div>
+    {% endif %}
+    {% if loan_groups %}
+      <input type="search" class="loan-filter js-loan-filter" placeholder="Filter by name or item&hellip;" aria-label="Filter signed-out kit by borrower or item">
+      {% for group in loan_groups %}
+        <div class="loan-group{{ ' loan-group-overdue' if group.overdue else '' }}" data-search="{{ group.search }}">
+          <div class="loan-group-header">
+            <div>
+              <strong>{{ group.name }}</strong>{% if group.overdue %} <span class="badge badge-denied">Overdue</span>{% endif %}
+              {% if group.email %}<br><small>{{ group.email }}</small>{% endif %}
+            </div>
+            {% if group.loans|length > 1 %}
+              <form method="post" action="{{ url_for('sign_in_many') }}">
                 {{ csrf_field() }}
-                <button type="submit" class="btn btn-small btn-primary">Sign In</button>
+                {% for so in group.loans %}<input type="hidden" name="signout_id" value="{{ so.id }}">{% endfor %}
+                <button type="submit" class="btn btn-small btn-primary">Sign In All ({{ group.loans|length }})</button>
               </form>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+            {% endif %}
+          </div>
+          <table>
+            <tbody>
+              {% for so in group.loans %}
+              <tr>
+                <td>{{ so.quantity }} &times; {{ so.item.name }}{% if so.gear_unit %} <small>({{ so.gear_unit.serial }})</small>{% endif %}
+                  {% if so.notes %}<br><small class="empty-state">{{ so.notes }}</small>{% endif %}
+                </td>
+                <td data-label="Out">{{ so.signed_out_at.strftime('%d %b') }} <small class="empty-state">({{ so.signed_out_at|relative_time }})</small></td>
+                <td{% if so.due_date %} data-label="Due"{% endif %}>
+                  {% if so.due_date %}{{ so.due_date.strftime('%a %d %b') }}{% if so.is_overdue %} <span class="badge badge-denied">Overdue</span>{% endif %}{% endif %}
+                </td>
+                <td class="actions">
+                  <form method="post" action="{{ url_for('sign_in_item', signout_id=so.id) }}" class="sign-out-item-form">
+                    {{ csrf_field() }}
+                    {% if so.quantity > 1 %}
+                      <div class="qty-stepper">
+                        <button type="button" class="qty-step qty-step-down" aria-label="Decrease quantity">&minus;</button>
+                        <input type="number" name="quantity" min="1" max="{{ so.quantity }}" value="{{ so.quantity }}" inputmode="numeric" aria-label="How many {{ so.item.name }} came back">
+                        <button type="button" class="qty-step qty-step-up" aria-label="Increase quantity">+</button>
+                      </div>
+                    {% endif %}
+                    <button type="submit" class="btn btn-small btn-primary">Sign In</button>
+                  </form>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endfor %}
+      <p class="empty-state js-loan-filter-empty" hidden>Nobody matches that filter.</p>
     {% else %}
       <p class="empty-state">Nothing is currently signed out.</p>
     {% endif %}
   </section>
+
+  {% if unrecorded_out %}
+  {% set unrecorded_units = unrecorded_out | sum(attribute=1) %}
+  <details class="card card-log" id="unrecorded"{% if request.args.get('show') == 'unrecorded' %} open{% endif %}>
+    <summary><h2>Out With No Loan Record <span class="badge badge-out">{{ unrecorded_units }}</span></h2></summary>
+    <p class="empty-state">Stock marked as out with no borrower on file (e.g. imported from the old spreadsheet). When it turns up in the store, sign it back in here.</p>
+    <table>
+      <thead><tr><th>Item</th><th>Type</th><th>Unaccounted for</th><th></th></tr></thead>
+      <tbody>
+        {% for item, units in unrecorded_out %}
+          <tr>
+            <td>{{ item.name }}{% if item.rack %} <span class="badge badge-group">{{ item.rack.name }}</span>{% endif %}</td>
+            <td data-label="Type">{{ item.subcategory.name }}</td>
+            <td data-label="Unaccounted for">{{ units }} of {{ item.quantity_total }}</td>
+            <td class="actions">
+              <form method="post" action="{{ url_for('sign_in_unrecorded', item_id=item.id) }}" class="sign-out-item-form">
+                {{ csrf_field() }}
+                <div class="qty-stepper">
+                  <button type="button" class="qty-step qty-step-down" aria-label="Decrease quantity of {{ item.name }}">&minus;</button>
+                  <input type="number" name="quantity" min="1" max="{{ units }}" value="{{ units }}" inputmode="numeric" aria-label="Quantity of {{ item.name }} to sign in">
+                  <button type="button" class="qty-step qty-step-up" aria-label="Increase quantity of {{ item.name }}">+</button>
+                </div>
+                <button type="submit" class="btn btn-small btn-primary">Sign In</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
 
   <details class="card card-log">
     <summary><h2>Sign-Out History</h2></summary>

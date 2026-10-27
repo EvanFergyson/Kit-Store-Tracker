@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Your Kit Request{% endblock %}
+{% block content %}
+  {% if just_sent %}
+    <section class="card card-success">
+      <h1>Request sent</h1>
+      <p>We've emailed a copy to <strong>{{ first.requester_email }}</strong> with a link back to this page. A committee member will reply with when and where to collect.</p>
+    </section>
+  {% else %}
+    <h1>Your Kit Request</h1>
+  {% endif %}
+
+  <section class="card">
+    <h2>{{ first.requester_name }}</h2>
+    <p class="empty-state">
+      Sent {{ first.created_at.strftime('%d %b %Y') }}
+      {% if first.needed_from %} &middot; Needed {{ first.needed_from.strftime('%a %d %b') }} to {{ first.needed_to.strftime('%a %d %b') }}{% endif %}
+    </p>
+    <table>
+      <thead><tr><th>Item</th><th>Asked for</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for line in lines %}
+          <tr>
+            <td>{{ line.item_name }}</td>
+            <td data-label="Asked for">{{ line.quantity }}</td>
+            <td data-label="Status">
+              {% if line.status == "approved" %}
+                {% if line.fulfilled_signout_id %}
+                  <span class="badge badge-approved">Collected</span>
+                {% else %}
+                  <span class="badge badge-approved">Approved</span>
+                {% endif %}
+                {% if line.handover_quantity != line.quantity %}<small>{{ line.handover_quantity }} of {{ line.quantity }} approved</small>{% endif %}
+              {% elif line.status == "denied" %}
+                <span class="badge badge-denied">Not available</span>{% if line.deny_reason %} <small>{{ line.deny_reason }}</small>{% endif %}
+              {% elif line.status == "cancelled" %}
+                <span class="badge badge-out">Cancelled</span>
+              {% else %}
+                <span class="badge badge-pending">Waiting for committee</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if first.handover_note %}
+      <div class="handover-note">
+        <strong>{{ first.claimed_by }} says:</strong>
+        <p>{{ first.handover_note }}</p>
+      </div>
+    {% endif %}
+
+    {% if can_cancel %}
+      <form method="post" action="{{ url_for('cancel_own_request', token=first.status_token) }}" onsubmit="return confirm('Cancel this request?');">
+        {{ csrf_field() }}
+        <button type="submit" class="btn btn-secondary">Cancel Request</button>
+      </form>
+      <p class="field-hint">Need to change something? Reply to your confirmation email and a committee member will update it.</p>
+    {% elif lines | selectattr('status', 'equalto', 'approved') | rejectattr('fulfilled_signout_id') | list %}
+      <p class="field-hint">To change or cancel, reply to your approval email.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Kit You Have Out</h2>
+    {% if loans %}
+      <table>
+        <thead><tr><th>Item</th><th>Qty</th><th>Due back</th></tr></thead>
+        <tbody>
+          {% for loan in loans %}
+            <tr>
+              <td>{{ loan.item.name }}</td>
+              <td data-label="Qty">{{ loan.quantity }}</td>
+              <td data-label="Due back">
+                {% if loan.due_date %}{{ loan.due_date.strftime('%a %d %b') }}{% if loan.is_overdue %} <span class="badge badge-denied">Overdue</span>{% endif %}{% else %}&mdash;{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="empty-state">Nothing signed out to {{ first.requester_email }} right now.</p>
+    {% endif %}
+  </section>
+
+  <p><a href="{{ url_for('request_kit') }}">&larr; Back to Request Kit</a></p>
+{% endblock %}

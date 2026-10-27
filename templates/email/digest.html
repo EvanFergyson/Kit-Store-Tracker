@@ -1,6 +1,6 @@
 {% extends "email/_layout.html" %}
 {% block body %}
-  <p style="margin:0 0 16px;font-size:16px;">Overdue kit as of {{ today.strftime('%A %d %B') }}:</p>
+  {% if loans or racks %}<p style="margin:0 0 16px;font-size:16px;">Overdue kit as of {{ today.strftime('%A %d %B') }}:</p>{% endif %}
   <table style="width:100%;border-collapse:collapse;font-size:15px;">
     {% for rack in racks %}
       <tr>
@@ -17,4 +17,16 @@
       </tr>
     {% endfor %}
   </table>
+  {% if expired %}
+    <p style="margin:24px 0 12px;font-size:16px;">Past their lifespan and still in service &mdash; retire or re-check:</p>
+    <table style="width:100%;border-collapse:collapse;font-size:15px;">
+      {% for unit in expired %}
+        <tr>
+          <td style="padding:10px 0;border-top:1px solid #e5e5ea;">{{ unit.item.name }}</td>
+          <td style="padding:10px 0;border-top:1px solid #e5e5ea;">{{ unit.serial }}</td>
+          <td style="padding:10px 0;border-top:1px solid #e5e5ea;text-align:right;">{{ '%.1f' % unit.age_years }} yrs</td>
+        </tr>
+      {% endfor %}
+    </table>
+  {% endif %}
 {% endblock %}

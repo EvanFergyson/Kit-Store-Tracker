@@ -3,11 +3,11 @@ document.addEventListener("DOMContentLoaded", () => {
   initAjaxBasketAdd();
   initAjaxBasketMutations();
   initQtySteppers();
-  initSessionOtherToggle();
   initGroupSplitTotals();
   scrollActiveSubnavIntoView();
   initSerialDecode();
-  initRetireToggle();
+  initMultiSignOutRows();
+  initLoanFilter();
 });
 
 // The app has two feedback systems: floating toasts (basket add/update/
@@ -128,6 +128,15 @@ function initAjaxBasketMutations() {
     });
   });
 
+  // Quantities save as they change - there's no Update button to forget.
+  document.querySelectorAll("form.js-basket-update").forEach((form) => {
+    let timer;
+    form.addEventListener("change", () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => form.requestSubmit(), 400);
+    });
+  });
+
   document.querySelectorAll("form.js-basket-remove").forEach((form) => {
     form.addEventListener("submit", function handleSubmit(event) {
       if (form.dataset.bypass) return;
@@ -164,8 +173,8 @@ function initAjaxBasketMutations() {
 // buttons with no "name" attribute, so they never interfere with the
 // surrounding form's submission - only the input itself is submitted, same
 // as a bare <input type="number"> always was.
-function initQtySteppers() {
-  document.querySelectorAll(".qty-stepper").forEach((stepper) => {
+function initQtySteppers(root = document) {
+  root.querySelectorAll(".qty-stepper").forEach((stepper) => {
     const input = stepper.querySelector("input[type=number]");
     const down = stepper.querySelector(".qty-step-down");
     const up = stepper.querySelector(".qty-step-up");
@@ -187,14 +196,16 @@ function initQtySteppers() {
       const parsed = parseInt(input.value, 10);
       return Number.isNaN(parsed) ? min : parsed;
     };
-    const clamp = (value) => (Number.isNaN(value) ? min : Math.max(min, value));
+    const parsedMax = parseInt(input.max, 10);
+    const max = Number.isNaN(parsedMax) ? Infinity : parsedMax;
+    const clamp = (value) => (Number.isNaN(value) ? min : Math.min(max, Math.max(min, value)));
 
-    down.addEventListener("click", () => {
-      input.value = clamp(currentValue() - 1);
-    });
-    up.addEventListener("click", () => {
-      input.value = clamp(currentValue() + 1);
-    });
+    const step = (delta) => {
+      input.value = clamp(currentValue() + delta);
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    down.addEventListener("click", () => step(-1));
+    up.addEventListener("click", () => step(1));
     input.addEventListener("blur", () => {
       input.value = clamp(parseInt(input.value, 10));
     });
@@ -308,28 +319,6 @@ function initChipFilter(chipsContainerId, rowClassName, noMatchMessageId) {
   });
 }
 
-// The checkout form's pickup/return session pickers each have their own
-// "Other" text box, hidden until the member actually picks "Other" - and
-// only required at that point, so the browser's built-in validation doesn't
-// block submission over a box that isn't even relevant to the option they
-// chose. Runs globally (guarded on finding no [data-session-group] elements)
-// rather than only on the basket page, matching every other init* function.
-function initSessionOtherToggle() {
-  document.querySelectorAll("[data-session-group]").forEach((group) => {
-    const name = group.dataset.sessionGroup;
-    const otherInput = document.querySelector(`[data-session-other="${name}"]`);
-    if (!otherInput) return;
-
-    group.querySelectorAll('input[type="radio"]').forEach((radio) => {
-      radio.addEventListener("change", () => {
-        const isOther = radio.value === "Other" && radio.checked;
-        otherInput.style.display = isOther ? "" : "none";
-        otherInput.required = isOther;
-      });
-    });
-  });
-}
-
 // On phones the admin tabs are a single sideways-scrolling row, so a tab near
 // the end (e.g. Resolved Requests) would start off-screen when it's active.
 function scrollActiveSubnavIntoView() {
@@ -377,15 +366,36 @@ function initSerialDecode() {
   });
 }
 
-// Only offer "also remove it from stock" when the grade being recorded is Retire.
-function initRetireToggle() {
-  document.querySelectorAll(".js-retire-toggle").forEach((form) => {
-    const extra = form.querySelector(".js-retire-only");
-    if (!extra) return;
-    form.querySelectorAll('input[name="grade"]').forEach((radio) => {
-      radio.addEventListener("change", () => {
-        extra.hidden = !(radio.checked && radio.value === "retire");
-      });
+// "Sign out several items to one person": add another item row by copying
+// the first one, blanked.
+function initMultiSignOutRows() {
+  const rows = document.querySelector(".js-multi-rows");
+  const add = document.querySelector(".js-multi-add");
+  if (!rows || !add) return;
+  add.addEventListener("click", () => {
+    const row = rows.querySelector(".multi-row").cloneNode(true);
+    row.querySelector("select").value = "";
+    row.querySelector('input[name="quantity"]').value = 1;
+    rows.appendChild(row);
+    initQtySteppers(row);
+    row.querySelector("select").focus();
+  });
+}
+
+// Narrow "Currently Signed Out" to borrowers whose name, email or kit match.
+function initLoanFilter() {
+  const input = document.querySelector(".js-loan-filter");
+  if (!input) return;
+  const groups = document.querySelectorAll(".loan-group");
+  const empty = document.querySelector(".js-loan-filter-empty");
+  input.addEventListener("input", () => {
+    const query = input.value.trim().toLowerCase();
+    let shown = 0;
+    groups.forEach((group) => {
+      const match = !query || group.dataset.search.includes(query);
+      group.hidden = !match;
+      shown += match;
     });
+    if (empty) empty.hidden = shown > 0;
   });
 }

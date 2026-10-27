@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import request_dates_form %}
 {% block title %}Admin{% endblock %}
 {% block content %}
   <h1>Admin</h1>
@@ -8,51 +9,82 @@
     <h2>Pending Requests</h2>
     {% if pending_groups %}
       {% for group in pending_groups %}
-        <div class="request-group">
+        {% set rg = group.request_group %}
+        <div class="request-group" id="req-{{ rg }}">
           <div class="request-group-header">
             <div>
               <strong>{{ group.requester_name }}</strong>
               {% if group.requester_email %}<br><small>{{ group.requester_email }}</small>{% endif %}
-              <br><small>{{ group.created_at.strftime('%d %b %Y %H:%M') }}</small>
+              <br><small>Sent {{ group.created_at.strftime('%d %b %H:%M') }}</small>
             </div>
-            {% if group.request_group and group.lines|length > 1 %}
-              <div class="actions">
-                <form method="post" action="{{ url_for('resolve_request_group', request_group=group.request_group, action='approve') }}">
-                  {{ csrf_field() }}
-                  <button type="submit" class="btn btn-small btn-success">Approve All</button>
-                </form>
-                <form method="post" action="{{ url_for('resolve_request_group', request_group=group.request_group, action='deny') }}">
-                  {{ csrf_field() }}
-                  <button type="submit" class="btn btn-small btn-danger">Deny All</button>
-                </form>
-              </div>
-            {% endif %}
           </div>
-          <p class="empty-state">
-            Pickup: {{ group.pickup_display or '—' }} &middot; Return: {{ group.return_display or '—' }}
+          <p class="request-dates">
+            {% if group.needed_from %}
+              Needed <strong>{{ group.needed_from.strftime('%a %d %b') }}</strong> &rarr; back <strong>{{ group.needed_to.strftime('%a %d %b') }}</strong>
+            {% else %}
+              Pickup: {{ group.pickup_display or '—' }} &middot; Return: {{ group.return_display or '—' }}
+            {% endif %}
           </p>
           {% if group.message %}<p class="empty-state">&ldquo;{{ group.message }}&rdquo;</p>{% endif %}
-          <table>
-            <thead><tr><th>Item</th><th>Qty</th><th></th></tr></thead>
-            <tbody>
-              {% for r in group.lines %}
-              <tr>
-                <td>{{ r.item_name }}</td>
-                <td data-label="Qty">{{ r.quantity }}</td>
-                <td class="actions">
-                  <form method="post" action="{{ url_for('resolve_request', request_id=r.id, action='approve') }}">
-                    {{ csrf_field() }}
-                    <button type="submit" class="btn btn-small btn-success">Approve</button>
-                  </form>
-                  <form method="post" action="{{ url_for('resolve_request', request_id=r.id, action='deny') }}">
-                    {{ csrf_field() }}
-                    <button type="submit" class="btn btn-small btn-danger">Deny</button>
-                  </form>
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+
+          <form method="post" action="{{ url_for('accept_request', request_group=rg) }}" class="accept-form">
+            {{ csrf_field() }}
+            <table>
+              <thead><tr><th>Item</th><th>Asked</th><th>On shelf</th><th>Give</th></tr></thead>
+              <tbody>
+                {% for r in group.lines %}
+                  {% set available = line_available(r) %}
+                  {% set short = available is not none and available < r.quantity %}
+                  <tr{% if short %} class="row-short"{% endif %}>
+                    <td>{{ r.item_name }}{% if r.group_id %} <span class="badge badge-group">Multiple options</span>{% endif %}</td>
+                    <td data-label="Asked">{{ r.quantity }}</td>
+                    <td data-label="On shelf">{% if available is none %}<small class="empty-state">Not in catalogue</small>{% else %}<span class="{{ 'stock-warning' if short else '' }}">{{ available }}</span>{% endif %}</td>
+                    <td data-label="Give">
+                      <div class="qty-stepper">
+                        <button type="button" class="qty-step qty-step-down" aria-label="Decrease quantity of {{ r.item_name }}">&minus;</button>
+                        <input type="number" name="approved_{{ r.id }}" min="0" max="{{ r.quantity }}" value="{{ [r.quantity, available]|min if available is not none else r.quantity }}" inputmode="numeric" aria-label="Quantity of {{ r.item_name }} to give">
+                        <button type="button" class="qty-step qty-step-up" aria-label="Increase quantity of {{ r.item_name }}">+</button>
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            <label for="note-{{ rg }}">Handover note for {{ group.requester_name }}</label>
+            <textarea id="note-{{ rg }}" name="handover_note" rows="2" required placeholder="e.g. Cage, Thu 6pm — text me when you're outside"></textarea>
+            <p class="field-hint">Emailed to them with what you're giving. Set a line to 0 to leave it out.</p>
+            <button type="submit" class="btn btn-small btn-success">Accept as {{ session.get('committee_name', 'Committee') }}</button>
+          </form>
+
+          <details class="request-more"{% if open_group == rg %} open{% endif %}>
+            <summary>Deny, add an item or change dates</summary>
+            <form method="post" action="{{ url_for('deny_request', request_group=rg) }}" class="inline-form">
+              {{ csrf_field() }}
+              <div>
+                <label for="deny-{{ rg }}">Reason (emailed to them)</label>
+                <input type="text" id="deny-{{ rg }}" name="deny_reason" required placeholder="e.g. All out until next month">
+              </div>
+              <button type="submit" class="btn btn-small btn-danger">Deny</button>
+            </form>
+            <form method="post" action="{{ url_for('add_request_item', request_group=rg) }}" class="inline-form">
+              {{ csrf_field() }}
+              <div>
+                <label for="add-{{ rg }}">Add an item</label>
+                <select id="add-{{ rg }}" name="entry" required>
+                  <option value="">Choose&hellip;</option>
+                  {% for entry in addable %}
+                    <option value="{{ entry.kind }}:{{ entry.id }}">{{ entry.name }} ({{ entry.quantity_available }} on shelf)</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label for="add-qty-{{ rg }}">Qty</label>
+                <input type="number" id="add-qty-{{ rg }}" name="quantity" min="1" value="1" inputmode="numeric" required>
+              </div>
+              <button type="submit" class="btn btn-small btn-secondary">Add</button>
+            </form>
+            {{ request_dates_form(rg, group.needed_from, group.needed_to) }}
+          </details>
         </div>
       {% endfor %}
     {% else %}

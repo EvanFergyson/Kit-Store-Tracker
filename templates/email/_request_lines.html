@@ -1,0 +1,17 @@
+<table style="width:100%;border-collapse:collapse;font-size:15px;">
+  {% for line in lines %}
+    <tr>
+      <td style="padding:10px 0;border-top:1px solid #e5e5ea;">{{ line.quantity }} &times; {{ line.item_name }}</td>
+      <td style="padding:10px 0;border-top:1px solid #e5e5ea;text-align:right;">
+        {% if line.status == "approved" %}
+          {% if line.handover_quantity != line.quantity %}<span style="color:#9a3412;font-weight:600;">{{ line.handover_quantity }} approved</span>{% else %}Approved{% endif %}
+        {% elif line.status == "denied" %}<span style="color:#9a3412;">Not available{% if line.deny_reason and show_reasons %} &mdash; {{ line.deny_reason }}{% endif %}</span>
+        {% elif line.status == "cancelled" %}Cancelled
+        {% elif stock_check %}
+          {% set available = line_available(line) %}
+          {% if available is not none and available < line.quantity %}<span style="color:#9a3412;font-weight:600;">only {{ available }} available</span>{% endif %}
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+</table>

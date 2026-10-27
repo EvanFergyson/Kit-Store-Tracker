@@ -1,12 +1,25 @@
 <nav class="admin-subnav">
   <a href="{{ url_for('sign_in_out') }}" class="admin-subnav-link{{ ' active' if active_tab == 'sign_in_out' else '' }}">Sign In/Out</a>
-  <a href="{{ url_for('admin') }}" class="admin-subnav-link{{ ' active' if active_tab == 'pending' else '' }}">Pending Requests</a>
-  <a href="{{ url_for('admin_inventory') }}" class="admin-subnav-link{{ ' active' if active_tab == 'inventory' else '' }}">Kit Inventory</a>
-  <a href="{{ url_for('admin_groups') }}" class="admin-subnav-link{{ ' active' if active_tab == 'groups' else '' }}">Item Groups</a>
-  <a href="{{ url_for('admin_racks') }}" class="admin-subnav-link{{ ' active' if active_tab == 'racks' else '' }}">Racks</a>
-  <a href="{{ url_for('admin_bundles') }}" class="admin-subnav-link{{ ' active' if active_tab == 'bundles' else '' }}">Kit Bundles</a>
-  <a href="{{ url_for('admin_categories') }}" class="admin-subnav-link{{ ' active' if active_tab == 'categories' else '' }}">Categories</a>
-  <a href="{{ url_for('admin_archived') }}" class="admin-subnav-link{{ ' active' if active_tab == 'archived' else '' }}">Archived</a>
-  <a href="{{ url_for('admin_resolved') }}" class="admin-subnav-link{{ ' active' if active_tab == 'resolved' else '' }}">Resolved Requests</a>
-  <a href="{{ url_for('gear_register') }}" class="admin-subnav-link">Gear Register</a>
+  <a href="{{ url_for('admin') }}" class="admin-subnav-link{{ ' active' if active_tab == 'pending' else '' }}">Requests{% if pending_count %} <span class="subnav-count">{{ pending_count }}</span>{% endif %}</a>
+  <a href="{{ url_for('admin_inventory') }}" class="admin-subnav-link{{ ' active' if active_tab == 'inventory' else '' }}">Inventory</a>
+  {% set extra = [
+    ('admin_groups', 'groups', 'Item Groups'),
+    ('admin_racks', 'racks', 'Racks'),
+    ('admin_bundles', 'bundles', 'Kit Bundles'),
+    ('admin_categories', 'categories', 'Categories'),
+    ('admin_archived', 'archived', 'Archived'),
+    ('admin_resolved', 'resolved', 'Resolved Requests'),
+    ('gear_register', None, 'Gear Register'),
+  ] %}
+  {% for endpoint, tab, label in extra %}
+    <a href="{{ url_for(endpoint) }}" class="admin-subnav-link subnav-extra{{ ' active' if tab and active_tab == tab else '' }}">{{ label }}</a>
+  {% endfor %}
+  <details class="subnav-more">
+    <summary class="admin-subnav-link{{ ' active' if active_tab in ('groups', 'racks', 'bundles', 'categories', 'archived', 'resolved') else '' }}">More</summary>
+    <div class="subnav-more-menu">
+      {% for endpoint, tab, label in extra %}
+        <a href="{{ url_for(endpoint) }}"{% if tab and active_tab == tab %} aria-current="page"{% endif %}>{{ label }}</a>
+      {% endfor %}
+    </div>
+  </details>
 </nav>

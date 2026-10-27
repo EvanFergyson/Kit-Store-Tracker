@@ -259,7 +259,7 @@ def test_cron_endpoint_checks_secret(client, app, item, monkeypatch):
     assert client.post("/tasks/send-reminders", headers={"X-Cron-Secret": "wrong"}).status_code == 403
     assert client.post("/tasks/send-reminders").status_code == 403
     response = client.post("/tasks/send-reminders", headers={"X-Cron-Secret": "s3cret"})
-    assert response.status_code == 200 and set(response.get_json()) == {"receipt", "day_before", "overdue", "digest"}
+    assert response.status_code == 200 and set(response.get_json()) == {"receipt", "day_before", "overdue", "digest", "unclaimed"}
 
 
 @pytest.mark.parametrize("sent", [" s3cret ", '"s3cret"', "'s3cret'"])

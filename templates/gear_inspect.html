@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Inspect Gear{% endblock %}
+{% block content %}
+  <h1>Annual Inspection</h1>
+  {% include "_gear_nav.html" %}
+
+  {% set done = total - remaining %}
+  <div class="inspect-progress" role="progressbar" aria-valuemin="0" aria-valuemax="{{ total }}" aria-valuenow="{{ done }}" aria-label="Inspection progress">
+    <div class="inspect-progress-bar" style="width: {{ (done / total * 100) if total else 100 }}%"></div>
+  </div>
+  <p class="field-hint"><strong>{{ done }} of {{ total }}</strong> checked in the last 11 months.</p>
+
+  {% if current %}
+    {% set latest = current.latest_grade_inspection %}
+    <section class="card card-action inspect-card">
+      <p class="muted">{{ current.item.name }}</p>
+      <h2 class="inspect-serial">{{ current.serial }}</h2>
+      <p>
+        {% if current.age_years is not none %}{{ '%.1f' | format(current.age_years) }} years old{% else %}Age unknown{% endif %}
+        {% if current.past_lifespan %} <span class="badge badge-denied">Past lifespan</span>{% endif %}
+        &middot; last: {% if latest %}{{ latest.grade_label }} ({{ latest.inspected_at.strftime('%b %Y') }}){% else %}never inspected{% endif %}
+      </p>
+      <form method="post" action="{{ url_for('gear_inspect_unit', unit_id=current.id) }}">
+        {{ csrf_field() }}
+        <label for="inspect-notes">Notes <small>(optional, required to retire)</small></label>
+        <input type="text" id="inspect-notes" name="notes" autocomplete="off">
+        <div class="grade-buttons">
+          <button type="submit" name="grade" value="good" class="btn btn-success">Good</button>
+          <button type="submit" name="grade" value="minor_wear" class="btn btn-secondary">Minor wear</button>
+          <button type="submit" name="grade" value="needs_attention" class="btn btn-secondary">Needs attention</button>
+          <button type="submit" name="grade" value="retire" class="btn btn-danger">Retire</button>
+        </div>
+        <input type="hidden" name="reduce_stock" value="1">
+      </form>
+      <p class="field-hint">Retiring also takes it out of {{ current.item.name }} stock. <a href="{{ url_for('gear_unit', unit_id=current.id) }}">Open full record</a></p>
+    </section>
+
+    <section class="card">
+      <h2>Still to Check</h2>
+      {% for item, units in by_item %}
+        <details class="inspect-group">
+          <summary><strong>{{ item.name }}</strong> &middot; {{ units|length }} to check</summary>
+          <p class="unit-chips">
+            {% for unit in units %}<a class="filter-chip{{ ' active' if unit.id == current.id else '' }}" href="{{ url_for('gear_inspect', unit=unit.id) }}">{{ unit.serial }}</a>{% endfor %}
+          </p>
+          <form method="post" action="{{ url_for('gear_inspect_all_good', item_id=item.id) }}" class="inline-form">
+            {{ csrf_field() }}
+            <label class="check-option"><input type="checkbox" name="confirm" value="1" required> I've checked all {{ units|length }} and they're fine</label>
+            <button type="submit" class="btn btn-small btn-success">Mark All Good</button>
+          </form>
+        </details>
+      {% endfor %}
+    </section>
+  {% else %}
+    <section class="card card-success">
+      <h2>All done</h2>
+      <p>Every in-service piece has been checked in the last 11 months.</p>
+    </section>
+  {% endif %}
+{% endblock %}

@@ -103,7 +103,7 @@ Since this targets free hosting, two easy options:
 Borrowers whose kit was collected from an online request get a receipt, a reminder the day before it's due, and an overdue reminder on the due date and every 3 days after. The Gear Secretary gets a Monday digest of everything overdue (including walk-in loans with no email).
 
 1. Create a free [Resend](https://resend.com) account and verify the club's sending domain (Resend only emails your own address until a domain is verified).
-2. Set in Render: `RESEND_API_KEY`, `MAIL_FROM` (e.g. `CUMC Kit Store <reminders@cumc.co.uk>`), `GEAR_SEC_EMAIL`, optionally `MAIL_REPLY_TO` (where member replies go; defaults to `GEAR_SEC_EMAIL`), and `CRON_SECRET` (any long random string — `python -c "import secrets; print(secrets.token_hex(32))"`).
+2. Set in Render: `RESEND_API_KEY`, `MAIL_FROM` (e.g. `CUMC Kit Store <reminders@cumc.co.uk>`), `GEAR_SEC_EMAIL`, optionally `REQUESTS_EMAIL` (comma-separated addresses told about new member requests; defaults to `GEAR_SEC_EMAIL`), optionally `MAIL_REPLY_TO` (where member replies go; defaults to `GEAR_SEC_EMAIL`), and `CRON_SECRET` (any long random string — `python -c "import secrets; print(secrets.token_hex(32))"`).
 3. Render's free service sleeps when idle, so something outside has to trigger the reminders. Create a free job at [cron-job.org](https://cron-job.org) that runs **hourly** and sends `POST https://<your-app>.onrender.com/tasks/send-reminders` with the header `X-Cron-Secret: <your CRON_SECRET>`. Running it more often is harmless: every email is logged and only ever sent once.
 
 Without `RESEND_API_KEY` (e.g. locally) emails are only logged, never sent. Without `CRON_SECRET` the endpoint is switched off (404).

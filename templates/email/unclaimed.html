@@ -1,0 +1,13 @@
+{% extends "email/_layout.html" %}
+{% block body %}
+  <p style="margin:0 0 20px;font-size:16px;line-height:1.5;">Nobody has picked up {{ 'these requests' if groups|length > 1 else 'this request' }} yet:</p>
+  <table style="width:100%;border-collapse:collapse;font-size:15px;">
+    {% for group in groups %}
+      <tr>
+        <td style="padding:10px 0;border-top:1px solid #e5e5ea;"><strong>{{ group.requester_name }}</strong><br>{% for line in group.lines %}{{ line.quantity }} &times; {{ line.item_name }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+        <td style="padding:10px 0;border-top:1px solid #e5e5ea;text-align:right;white-space:nowrap;">{% if group.needed_from %}needed {{ group.needed_from.strftime('%a %d %b') }}{% endif %}</td>
+      </tr>
+    {% endfor %}
+  </table>
+  <p style="margin:24px 0 0;font-size:16px;"><a href="{{ admin_url }}" style="color:#bc1016;font-weight:600;">Accept or deny</a></p>
+{% endblock %}

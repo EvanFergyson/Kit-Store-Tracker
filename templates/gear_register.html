@@ -1,46 +1,62 @@
 {% extends "base.html" %}
 {% block title %}Gear Register{% endblock %}
 {% block content %}
-  <h1>Gear Register</h1>
+  <div class="page-head">
+    <h1>Gear Register</h1>
+    <form method="post" action="{{ url_for('gear_logout') }}">
+      {{ csrf_field() }}
+      <button type="submit" class="link-button">Lock register</button>
+    </form>
+  </div>
   {% include "_gear_nav.html" %}
 
-  <div class="filter-chips" role="group" aria-label="Show">
-    <a class="filter-chip{{ ' active' if show == 'all' else '' }}" href="{{ url_for('gear_register') }}">In service ({{ counts.all }})</a>
-    <a class="filter-chip{{ ' active' if show == 'action' else '' }}" href="{{ url_for('gear_register', show='action') }}">Needs action ({{ counts.action }})</a>
-    <a class="filter-chip{{ ' active' if show == 'retired' else '' }}" href="{{ url_for('gear_register', show='retired') }}">Retired ({{ counts.retired }})</a>
-  </div>
+  <form method="get" action="{{ url_for('gear_register') }}" class="serial-search" role="search">
+    <input type="search" name="q" value="{{ query }}" placeholder="Find a serial (part of it is fine)" aria-label="Find a serial number" autocapitalize="characters" autocomplete="off">
+    <button type="submit" class="btn btn-small btn-primary">Find</button>
+  </form>
+
+  {% if to_inspect and show != 'search' %}
+    <a class="notice-banner" href="{{ url_for('gear_inspect') }}">{{ to_inspect }} piece{{ 's' if to_inspect != 1 else '' }} due an inspection &rarr;</a>
+  {% endif %}
+
+  {% if show == 'search' %}
+    <p><strong>{{ groups | map(attribute=1) | map('length') | sum }}</strong> match{{ 'es' if (groups | map(attribute=1) | map('length') | sum) != 1 else '' }} for &ldquo;{{ query }}&rdquo; &middot; <a href="{{ url_for('gear_register') }}">Clear</a></p>
+  {% else %}
+    <div class="filter-chips" role="group" aria-label="Show">
+      <a class="filter-chip{{ ' active' if show == 'all' else '' }}" href="{{ url_for('gear_register') }}">In service ({{ counts.all }})</a>
+      <a class="filter-chip{{ ' active' if show == 'action' else '' }}" href="{{ url_for('gear_register', show='action') }}">Needs action ({{ counts.action }})</a>
+      <a class="filter-chip{{ ' active' if show == 'retired' else '' }}" href="{{ url_for('gear_register', show='retired') }}">Retired ({{ counts.retired }})</a>
+    </div>
+  {% endif %}
 
   {% for subcategory, units in groups %}
     <section class="card">
-      <h2>{{ subcategory.name }} <small class="muted">{{ subcategory.category.name }}{% if subcategory.max_age_years %} &middot; {{ subcategory.max_age_years }}-year lifespan{% endif %}</small></h2>
-      <table>
-        <thead><tr><th>Serial</th><th>Item</th><th>Brand</th><th>Made</th><th>Condition</th><th>Flags</th></tr></thead>
-        <tbody>
-          {% for unit in units %}
-            {% set latest = unit.latest_inspection %}
-            <tr>
-              <td><a class="row-link" href="{{ url_for('gear_unit', unit_id=unit.id) }}">{{ unit.serial }}</a></td>
-              <td data-label="Item">{{ unit.item.name }}</td>
-              <td{% if unit.brand %} data-label="Brand"{% endif %}>{{ unit.brand or '' }}</td>
-              <td data-label="Made">
-                {% if unit.manufacture_date %}{{ unit.manufacture_date.strftime('%b %Y') }} <small class="muted">({{ '%.1f' | format(unit.age_years) }} yrs)</small>{% else %}<span class="muted">Unknown</span>{% endif %}
-              </td>
-              <td data-label="Condition">
+      <h2>{{ subcategory.name }} <small class="muted">{{ units|length }}{% if subcategory.max_age_years %} &middot; {{ subcategory.max_age_years }}-year lifespan{% endif %}</small></h2>
+      <ul class="unit-list">
+        {% for unit in units %}
+          {% set latest = unit.latest_grade_inspection %}
+          <li>
+            <a class="unit-row" href="{{ url_for('gear_unit', unit_id=unit.id) }}">
+              <span class="unit-serial">{{ unit.serial }}</span>
+              <span class="unit-meta">{{ unit.item.name }}{% if unit.age_years is not none %} &middot; {{ '%.1f' | format(unit.age_years) }} yrs{% endif %}</span>
+              <span class="unit-status">
                 {% if not unit.in_service %}<span class="badge badge-archived">Retired</span>
-                {% elif latest %}<span class="badge grade-{{ latest.grade }}">{{ latest.grade_label }}</span>
-                {% else %}<span class="muted">Not inspected</span>{% endif %}
-              </td>
-              <td>
-                {% for flag in unit.flags() if not unit.latest_inspection or flag != unit.latest_inspection.grade_label %}<span class="badge badge-out">{{ flag }}</span> {% endfor %}
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+                {% else %}
+                  {% if unit.past_lifespan %}<span class="badge badge-denied">Past lifespan</span>{% endif %}
+                  {% if latest %}<span class="badge grade-{{ latest.grade }}">{{ latest.grade_label }}</span>{% endif %}
+                  {% for flag in unit.flags() if flag not in ('Past lifespan', latest.grade_label if latest else '') %}<span class="badge badge-out">{{ flag }}</span>{% endfor %}
+                {% endif %}
+              </span>
+            </a>
+          </li>
+        {% endfor %}
+      </ul>
     </section>
   {% else %}
     <section class="card">
-      {% if show == 'action' %}
+      {% if show == 'search' %}
+        <p class="empty-state">No serial contains &ldquo;{{ query }}&rdquo;.</p>
+      {% elif show == 'action' %}
         <p class="empty-state">Nothing needs attention right now.</p>
       {% elif show == 'retired' %}
         <p class="empty-state">No retired pieces.</p>

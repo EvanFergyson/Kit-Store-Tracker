@@ -4,8 +4,24 @@
   <h1>Request Kit</h1>
   <p>Browse the kit store by category and add anything you need to your request list, then send it to the committee.</p>
 
+  <h2>Browse by Category</h2>
+  {% if category_cards %}
+    <div class="category-grid">
+      {% for card in category_cards %}
+        <a class="category-card" href="{{ url_for('request_category', category_id=card.category.id) }}">
+          <h3>{{ card.category.name }}</h3>
+          <div class="count">
+            {% set kinds = card.item_count + card.group_count %}{{ kinds }} type{{ 's' if kinds != 1 else '' }} of kit
+          </div>
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty-state">No kit has been added to the store yet.</p>
+  {% endif %}
+
   {% if bundles %}
-    <section class="card">
+    <section class="card mt-lg">
       <h2>Kit Bundles</h2>
       <p class="empty-state">Grab everything for a specific job in one go.</p>
       {% for bundle in bundles %}
@@ -31,7 +47,7 @@
   {% endif %}
 
   {% if racks %}
-    <section class="card">
+    <section class="card mt-lg">
       <h2>Club Trad Racks</h2>
       <p class="empty-state">Racks go out as a complete set. Ask a committee member at a session to borrow one.</p>
       {% for rack, available in racks %}
@@ -44,22 +60,6 @@
         </div>
       {% endfor %}
     </section>
-  {% endif %}
-
-  <h2>Browse by Category</h2>
-  {% if category_cards %}
-    <div class="category-grid">
-      {% for card in category_cards %}
-        <a class="category-card" href="{{ url_for('request_category', category_id=card.category.id) }}">
-          <h3>{{ card.category.name }}</h3>
-          <div class="count">
-            {{ card.item_count }} item{{ 's' if card.item_count != 1 else '' }}{% if card.group_count %}, {{ card.group_count }} group{{ 's' if card.group_count != 1 else '' }}{% endif %}
-          </div>
-        </a>
-      {% endfor %}
-    </div>
-  {% else %}
-    <p class="empty-state">No kit has been added to the store yet.</p>
   {% endif %}
 
   <section class="card mt-lg" id="cant-find-it">

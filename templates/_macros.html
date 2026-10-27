@@ -1,0 +1,26 @@
+{% macro request_dates_form(rg, needed_from, needed_to) %}
+<form method="post" action="{{ url_for('change_request_dates', request_group=rg) }}" class="inline-form">
+  {{ csrf_field() }}
+  <div>
+    <label for="from-{{ rg }}">Need from</label>
+    <input type="date" id="from-{{ rg }}" name="needed_from" value="{{ needed_from.isoformat() if needed_from else '' }}" required>
+  </div>
+  <div>
+    <label for="to-{{ rg }}">Return by</label>
+    <input type="date" id="to-{{ rg }}" name="needed_to" value="{{ needed_to.isoformat() if needed_to else '' }}" required>
+  </div>
+  <button type="submit" class="btn btn-small btn-secondary">Change Dates</button>
+</form>
+{% endmacro %}
+
+{% macro serial_field(item) %}
+{% if item and item.subcategory and item.subcategory.track_serials %}
+  {% set serials = item.units | selectattr('in_service') | rejectattr('open_loan') | list %}
+  {% if serials %}
+    <input type="text" name="serial" list="serials-{{ item.id }}" placeholder="Serial (optional)" aria-label="Serial number of the {{ item.name }} handed over" autocomplete="off">
+    <datalist id="serials-{{ item.id }}">
+      {% for unit in serials %}<option value="{{ unit.serial }}">{% endfor %}
+    </datalist>
+  {% endif %}
+{% endif %}
+{% endmacro %}

@@ -973,3 +973,153 @@ tbody tr:hover { background: var(--color-bg); }
   *, *::before, *::after { transition: none !important; animation: none !important; }
   .btn:active, .category-card:active, .dashboard-link-card:active { transform: none; }
 }
+
+/* ---- Requests: stock warnings, status page, accept flow ---- */
+.stock-warning { color: var(--color-warning); font-weight: 600; }
+.row-short td:first-child { box-shadow: inset 3px 0 0 var(--color-warning); padding-left: 0.6rem; }
+.badge-pending { background: var(--color-info-bg); color: var(--color-info); }
+.card-success { background: var(--color-success-bg); }
+.card-success h1 { margin-top: 0; }
+.handover-note {
+  margin: 1rem 0;
+  padding: 0.875rem 1rem;
+  border-radius: var(--radius-control);
+  background: var(--color-bg);
+  box-shadow: inset 3px 0 0 var(--color-success);
+}
+.handover-note p { margin: 0.25rem 0 0; }
+.date-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; }
+.request-dates { margin: 0.5rem 0; }
+.accept-form textarea { width: 100%; }
+.accept-form { margin-bottom: 0.5rem; }
+.request-more { margin-top: 0.75rem; }
+.request-more > summary { cursor: pointer; color: var(--color-muted); font-size: 0.9375rem; min-height: var(--tap); display: flex; align-items: center; }
+.request-more form { margin-top: 0.75rem; }
+.notice-banner {
+  display: block;
+  margin-bottom: 1rem;
+  padding: 0.875rem 1rem;
+  border-radius: var(--radius-control);
+  background: var(--color-info-bg);
+  color: var(--color-info);
+  font-weight: 600;
+  text-decoration: none;
+}
+.subnav-count {
+  margin-left: 0.35rem;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 0.6875rem;
+  line-height: 18px;
+  text-align: center;
+}
+.tab { position: relative; }
+
+/* Admin tabs: every page on a wide screen; the three daily ones plus "More" on phones. */
+.subnav-more { display: none; position: relative; }
+.subnav-more > summary { list-style: none; cursor: pointer; }
+.subnav-more > summary::-webkit-details-marker { display: none; }
+.subnav-more-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.4rem);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  padding: 0.4rem;
+  border-radius: var(--radius-control);
+  background: var(--color-bg);
+  box-shadow: 0 0 0 1px var(--color-border), 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+.subnav-more-menu a {
+  padding: 0.7rem 0.75rem;
+  border-radius: 8px;
+  color: var(--color-text);
+  text-decoration: none;
+}
+.subnav-more-menu a[aria-current] { font-weight: 600; background: var(--color-card); }
+@media (max-width: 600px) {
+  .admin-subnav { overflow: visible; flex-wrap: wrap; margin-left: 0; margin-right: 0; padding: 0; }
+  .admin-subnav .subnav-extra { display: none; }
+  .subnav-more { display: block; }
+  .date-pair { grid-template-columns: 1fr; }
+}
+
+/* ---- Sign In/Out: loans by borrower, undo, multi-item sign-out ---- */
+.loan-filter {
+  width: 100%;
+  min-height: var(--tap);
+  margin-bottom: 1rem;
+  padding: 0.5rem 0;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 1rem;
+}
+.loan-filter:focus { outline: none; border-bottom-color: var(--color-text); }
+.loan-group { padding: 0.75rem 0; border-top: 1px solid var(--color-separator); }
+.loan-group:first-of-type { border-top: none; }
+.loan-group[hidden] { display: none; }
+.loan-group-overdue .loan-group-header strong { color: var(--color-error-text); }
+.loan-group-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; flex-wrap: wrap; }
+.recent-returns {
+  margin-bottom: 1rem;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-control);
+  background: var(--color-success-bg);
+}
+.recent-return { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; padding: 0.35rem 0; }
+.multi-row { display: flex; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; }
+.multi-row select { flex: 1 1 220px; min-width: 0; }
+.multi-signout .js-multi-add { margin-bottom: 1rem; }
+
+/* ---- Gear register: search, compact list, inspection mode ---- */
+.page-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+.link-button {
+  min-height: var(--tap);
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-muted);
+  font: inherit;
+  font-size: 0.9375rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.serial-search { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 1rem; }
+.serial-search input { flex: 1; }
+.unit-list { list-style: none; margin: 0; padding: 0; }
+.unit-list li + li { border-top: 1px solid var(--color-separator); }
+.unit-row {
+  display: grid;
+  grid-template-columns: minmax(7rem, auto) 1fr auto;
+  gap: 0.25rem 1rem;
+  align-items: center;
+  min-height: var(--tap);
+  padding: 0.5rem 0;
+  color: var(--color-text);
+  text-decoration: none;
+}
+.unit-row:hover .unit-serial { text-decoration: underline; }
+.unit-serial { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--color-primary); }
+.unit-meta { color: var(--color-muted); font-size: 0.9375rem; }
+.unit-status { display: flex; gap: 0.3rem; flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 600px) {
+  .unit-row { grid-template-columns: 1fr auto; }
+  .unit-meta { grid-column: 1 / -1; grid-row: 2; }
+}
+.inspect-progress { height: 8px; border-radius: 999px; background: var(--color-fill); overflow: hidden; }
+.inspect-progress-bar { height: 100%; background: var(--color-success); }
+.inspect-serial { font-size: 2rem; margin: 0.25rem 0; font-variant-numeric: tabular-nums; }
+.grade-buttons { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; margin-top: 1rem; }
+.grade-buttons .btn { min-height: 52px; }
+.inspect-group { padding: 0.5rem 0; border-top: 1px solid var(--color-separator); }
+.inspect-group > summary { cursor: pointer; min-height: var(--tap); display: flex; align-items: center; gap: 0.35rem; }
+.unit-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.button-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
