@@ -160,11 +160,61 @@ def test_rack_with_history_cannot_be_deleted(client, app, rack):
         assert db.session.get(Rack, rack["rack"]) is not None
 
 
-def test_admin_can_add_and_remove_rack_items(client, app, rack):
+def test_only_cams_nuts_and_hexes_go_in_racks(client, app, rack):
     token = _token(client)
-    client.post(f"/admin/racks/{rack['rack']}/items/add", data={"item_id": rack["loose"], "csrf_token": token})
-    with app.app_context():
-        assert db.session.get(KitItem, rack["loose"]).rack_id == rack["rack"]
-    client.post(f"/admin/racks/{rack['rack']}/items/{rack['loose']}/remove", data={"csrf_token": token})
+    response = client.post(
+        f"/admin/racks/{rack['rack']}/items/add",
+        data={"item_id": rack["loose"], "quantity": "1", "csrf_token": token},
+        follow_redirects=True,
+    )
+    assert b"can&#39;t go in a rack" in response.data
     with app.app_context():
         assert db.session.get(KitItem, rack["loose"]).rack_id is None
+
+
+def test_rack_takes_units_from_shared_stock_and_gives_them_back(client, app, rack):
+    with app.app_context():
+        cams = Subcategory(name="Cams", category_id=rack["category"])
+        db.session.add(cams)
+        db.session.flush()
+        # 5 owned, 1 out with someone: 4 in the store.
+        source = KitItem(name="Test .4 Silver", subcategory_id=cams.id, quantity_total=5, quantity_available=4)
+        db.session.add(source)
+        db.session.commit()
+        source_id, cams_id = source.id, cams.id
+    token = _token(client)
+    assert "Test .4 Silver (4 in store)" in client.get("/admin/racks").get_data(as_text=True)
+
+    def add(quantity):
+        return client.post(
+            f"/admin/racks/{rack['rack']}/items/add",
+            data={"item_id": source_id, "quantity": quantity, "csrf_token": token},
+            follow_redirects=True,
+        )
+
+    assert b"Only 4" in add(5).data
+    add(1)
+    add(1)
+    with app.app_context():
+        line = KitItem.query.filter_by(rack_source_id=source_id).one()
+        assert (line.rack_id, line.quantity_total, line.short_name) == (rack["rack"], 2, "Test .4 Silver")
+        fresh = db.session.get(KitItem, source_id)
+        assert (fresh.quantity_total, fresh.quantity_available) == (3, 2)
+        line_id = line.id
+    assert "2 &times; Test .4 Silver" in client.get("/request").get_data(as_text=True)
+
+    client.post(f"/admin/racks/{rack['rack']}/items/{line_id}/remove", data={"csrf_token": token})
+    with app.app_context():
+        assert db.session.get(KitItem, line_id) is None
+        fresh = db.session.get(KitItem, source_id)
+        assert (fresh.quantity_total, fresh.quantity_available) == (5, 4)
+        KitItem.query.filter_by(id=source_id).delete()
+        Subcategory.query.filter_by(id=cams_id).delete()
+        db.session.commit()
+
+
+def test_legacy_whole_item_piece_can_be_removed(client, app, rack):
+    token = _token(client)
+    client.post(f"/admin/racks/{rack['rack']}/items/{rack['cam']}/remove", data={"csrf_token": token})
+    with app.app_context():
+        assert db.session.get(KitItem, rack["cam"]).rack_id is None

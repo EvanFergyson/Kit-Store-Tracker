@@ -113,6 +113,10 @@ class KitItem(db.Model):
     # rack). Rack pieces are rack-only: they're signed out and back in with
     # the whole rack, never on their own.
     rack_id = db.Column(db.Integer, db.ForeignKey("racks.id"), nullable=True)
+    # For a rack line: the shared item its units were taken from (e.g. the
+    # Red rack's ".4 Silver" came out of the store's ".4 Silver" cams), so
+    # removing it from the rack puts them back.
+    rack_source_id = db.Column(db.Integer, db.ForeignKey("kit_items.id"), nullable=True)
     description = db.Column(db.Text, nullable=True)
     location = db.Column(db.String(120), nullable=True)
     quantity_total = db.Column(db.Integer, nullable=False, default=1)
@@ -128,6 +132,12 @@ class KitItem(db.Model):
     created_at = db.Column(db.DateTime, default=utcnow)
 
     sign_outs = db.relationship("SignOut", backref="item", lazy=True)
+    rack_source = db.relationship("KitItem", remote_side=[id])
+
+    @property
+    def short_name(self):
+        """Name without the rack suffix, for listing inside its rack."""
+        return self.rack_source.name if self.rack_source else self.name
 
     @property
     def quantity_out(self):

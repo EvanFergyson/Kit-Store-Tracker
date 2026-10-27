@@ -206,7 +206,7 @@ def _ensure_schema():
             with db.engine.begin() as conn:
                 conn.execute(text(f"ALTER TABLE item_requests ADD COLUMN {column_ddl}"))
 
-    _add_missing_columns(KitItem, ["rack_id"])
+    _add_missing_columns(KitItem, ["rack_id", "rack_source_id"])
     _add_missing_columns(Subcategory, ["track_serials", "max_age_years"])
     _add_missing_columns(SignOut, ["rack_loan_id", "due_date", "borrower_email"])
     _add_missing_columns(EmailLog, ["status", "request_group"])
@@ -645,6 +645,77 @@ def _loans_by_borrower(loans):
         group["search"] = " ".join([group["name"], group["email"] or ""] + [l.item.name for l in group["loans"]]).lower()
     result.sort(key=lambda g: (not g["overdue"], g["next_due"] or date.max, g["name"].lower()))
     return result
+
+
+# Subcategories whose kit can be split into racks (matched case-insensitively).
+RACK_SUBCATEGORIES = ("cams", "nuts", "hexes")
+
+
+def _rack_source_items():
+    return (
+        KitItem.query.filter(
+            KitItem.active.is_(True),
+            KitItem.rack_id.is_(None),
+            KitItem.rack_source_id.is_(None),
+            KitItem.quantity_available > 0,
+        )
+        .join(Subcategory)
+        .filter(func.lower(Subcategory.name).in_(RACK_SUBCATEGORIES))
+        .order_by(Subcategory.name, KitItem.name)
+        .all()
+    )
+
+
+def _take_into_rack(rack, source, quantity):
+    """Move `quantity` units of a shared item into the rack's own line for
+    it, creating the line if needed. Returns an error message or None.
+    Caller commits."""
+    if not _set_item_total(source, source.quantity_total - quantity):
+        return f"Only {source.quantity_available} of '{source.name}' are in the store."
+    line_name = f"{source.name} ({rack.name})"
+    line = KitItem.query.filter(
+        KitItem.rack_source_id == source.id, func.lower(KitItem.name) == line_name.lower()
+    ).first()
+    if line and line.rack_id == rack.id and line.active:
+        _set_item_total(line, line.quantity_total + quantity)
+    elif line:
+        # Revive a line from an earlier stint in this rack (it has history).
+        line.rack_id, line.active = rack.id, True
+        _set_item_total(line, quantity)
+    else:
+        db.session.add(
+            KitItem(
+                name=line_name,
+                subcategory_id=source.subcategory_id,
+                rack_id=rack.id,
+                rack_source_id=source.id,
+                quantity_total=quantity,
+                quantity_available=quantity,
+            )
+        )
+    if source.quantity_total == 0:
+        source.active = False  # every unit is now in racks
+    return None
+
+
+def _release_from_rack(item):
+    """Take a piece out of its rack: a rack line's units go back to the item
+    they came from; an older whole-item piece just becomes loose again.
+    Caller commits."""
+    source = item.rack_source
+    if source is None:
+        item.rack_id = None
+        return
+    quantity = item.quantity_total
+    _set_item_total(source, source.quantity_total + quantity)
+    source.active = True
+    for unit in item.units:
+        unit.item_id = source.id
+    if item.sign_outs:
+        _set_item_total(item, 0)
+        item.rack_id, item.active = None, False
+    else:
+        db.session.delete(item)
 
 
 def _rack_blockers(rack):
@@ -2631,19 +2702,9 @@ def register_routes(app):
     @login_required
     def admin_racks():
         racks = Rack.query.order_by(Rack.name).all()
-        # Only items that are fully in the store and not already in a rack can
-        # be added to one - grouped by category to keep the picker scannable.
-        assignable = (
-            KitItem.query.filter_by(active=True, rack_id=None)
-            .filter(KitItem.quantity_available == KitItem.quantity_total)
-            .join(Subcategory)
-            .join(Category)
-            .order_by(Category.name, KitItem.name)
-            .all()
-        )
         assignable_by_category = {}
-        for item in assignable:
-            assignable_by_category.setdefault(item.category.name, []).append(item)
+        for item in _rack_source_items():
+            assignable_by_category.setdefault(item.subcategory.name, []).append(item)
         return render_template(
             "admin_racks.html",
             racks=[(rack, _rack_blockers(rack)) for rack in racks],
@@ -2697,8 +2758,9 @@ def register_routes(app):
             flash(f"The {rack.name} rack has loan history, so it can't be deleted — rename it instead.", "error")
         else:
             name = rack.name
-            for item in rack.items:
-                item.rack_id = None
+            for item in list(rack.items):
+                _release_from_rack(item)
+            db.session.flush()
             db.session.delete(rack)
             db.session.commit()
             flash(f"Deleted the {name} rack. Its kit is back in the store as individual items.", "success")
@@ -2708,18 +2770,24 @@ def register_routes(app):
     @login_required
     def add_rack_item(rack_id):
         rack = db.get_or_404(Rack, rack_id)
-        item = form_id_or_404(KitItem, "item_id")
-        if item.rack_id:
-            flash(f"'{item.name}' is already in the {item.rack.name} rack.", "error")
-        elif not item.active:
-            flash(f"'{item.name}' is archived.", "error")
-        elif item.quantity_available < item.quantity_total:
-            flash(f"'{item.name}' is partly signed out — add it once it's all back.", "error")
+        source = form_id_or_404(KitItem, "item_id")
+        quantity = parse_positive_int(request.form.get("quantity"))
+        error = None
+        if source not in _rack_source_items():
+            error = f"'{source.name}' can't go in a rack — only cams, nuts and hexes in the store can."
+        elif quantity is None:
+            error = "Enter how many to put in the rack."
+        elif rack.open_loan:
+            error = f"The {rack.name} rack is out — add kit once it's back."
         else:
-            item.rack_id = rack.id
+            error = _take_into_rack(rack, source, quantity)
+        if error:
+            db.session.rollback()
+            flash(error, "error")
+        else:
             db.session.commit()
-            flash(f"Added '{item.name}' to the {rack.name} rack.", "success")
-        return redirect(url_for("admin_racks"))
+            flash(f"Put {quantity} x {source.name} in {rack.name}.", "success")
+        return redirect(url_for("admin_racks") + f"#rack-{rack.id}")
 
     @app.route("/admin/racks/<int:rack_id>/items/<int:item_id>/remove", methods=["POST"])
     @login_required
@@ -2729,10 +2797,11 @@ def register_routes(app):
         if rack.open_loan:
             flash(f"The {rack.name} rack is out — remove pieces once it's back.", "error")
         else:
-            item.rack_id = None
+            name = item.short_name
+            _release_from_rack(item)
             db.session.commit()
-            flash(f"Removed '{item.name}' from the {rack.name} rack.", "success")
-        return redirect(url_for("admin_racks"))
+            flash(f"Took '{name}' out of {rack.name} and back into the store.", "success")
+        return redirect(url_for("admin_racks") + f"#rack-{rack.id}")
 
     # -- archived items --
     @app.route("/admin/archived")

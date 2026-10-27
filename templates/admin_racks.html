@@ -5,10 +5,10 @@
   {% include "_admin_nav.html" %}
 
   <section class="card">
-    <p class="empty-state">A rack is a colour-coded set of kit (e.g. the Red trad rack) that's always signed out and returned as one. Its pieces can't be lent on their own.</p>
+    <p class="empty-state">A rack is a colour-coded set of kit (e.g. the Red trad rack) that's always signed out and returned as one. Adding a cam, nut or hex moves that many units out of the shared store into the rack; removing it puts them back.</p>
 
     {% for rack, blockers in racks %}
-      <div class="request-group">
+      <div class="request-group" id="rack-{{ rack.id }}">
         <div class="request-group-header">
           <div>
             <h3 class="rack-title"><span class="rack-swatch" style="background: {{ rack.colour_hex }}"></span>{{ rack.name }}</h3>
@@ -29,7 +29,7 @@
           <ul class="plain-list">
             {% for item in rack.items %}
               <li>
-                <span>{{ item.quantity_total }} &times; {{ item.name }}{% if not item.active %} <span class="badge badge-archived">Archived</span>{% endif %}</span>
+                <span>{{ item.quantity_total }} &times; {{ item.short_name }} <small class="muted">{{ item.subcategory.name }}</small>{% if not item.active %} <span class="badge badge-archived">Archived</span>{% endif %}</span>
                 <form method="post" action="{{ url_for('remove_rack_item', rack_id=rack.id, item_id=item.id) }}">
                   {{ csrf_field() }}
                   <button type="submit" class="btn btn-small btn-danger">Remove</button>
@@ -48,17 +48,21 @@
           <form method="post" action="{{ url_for('add_rack_item', rack_id=rack.id) }}" class="inline-form mt-md">
             {{ csrf_field() }}
             <div>
-              <label for="rack-{{ rack.id }}-item">Add kit to this rack</label>
+              <label for="rack-{{ rack.id }}-item">Add a cam, nut or hex</label>
               <select id="rack-{{ rack.id }}-item" name="item_id" required>
-                <option value="" disabled selected>Choose an item&hellip;</option>
-                {% for category_name, items in assignable_by_category.items() %}
-                  <optgroup label="{{ category_name }}">
-                    {% for item in items %}<option value="{{ item.id }}">{{ item.name }} ({{ item.quantity_total }})</option>{% endfor %}
+                <option value="" disabled selected>Choose&hellip;</option>
+                {% for subcategory_name, items in assignable_by_category.items() %}
+                  <optgroup label="{{ subcategory_name }}">
+                    {% for item in items %}<option value="{{ item.id }}">{{ item.name }} ({{ item.quantity_available }} in store)</option>{% endfor %}
                   </optgroup>
                 {% endfor %}
               </select>
             </div>
-            <button type="submit" class="btn btn-small btn-primary">Add</button>
+            <div>
+              <label for="rack-{{ rack.id }}-qty">How many</label>
+              <input type="number" id="rack-{{ rack.id }}-qty" name="quantity" min="1" value="1" inputmode="numeric" required>
+            </div>
+            <button type="submit" class="btn btn-small btn-primary">Add to Rack</button>
           </form>
         {% endif %}
 
@@ -84,7 +88,7 @@
             </div>
             <button type="submit" class="btn btn-small btn-primary">Save</button>
           </form>
-          <form method="post" action="{{ url_for('delete_rack', rack_id=rack.id) }}" class="mt-sm" onsubmit="return confirm('Delete the {{ rack.name }} rack? Its kit goes back to being individual items.');">
+          <form method="post" action="{{ url_for('delete_rack', rack_id=rack.id) }}" class="mt-sm" onsubmit="return confirm('Delete this rack? Its kit goes back into the store.');">
             {{ csrf_field() }}
             <button type="submit" class="btn btn-small btn-danger">Delete rack</button>
           </form>

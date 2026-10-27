@@ -106,7 +106,7 @@
           {% endif %}
         </div>
         <p class="rack-contents">
-          {% for item in rack.items %}{{ item.quantity_total }} &times; {{ item.name }}{% if not loop.last %}, {% endif %}{% else %}No kit assigned yet.{% endfor %}
+          {% for item in rack.items %}{{ item.quantity_total }} &times; {{ item.short_name }}{% if not loop.last %}, {% endif %}{% else %}No kit assigned yet.{% endfor %}
         </p>
 
         {% if loan %}

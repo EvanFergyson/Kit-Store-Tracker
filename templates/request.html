@@ -56,7 +56,7 @@
             <h3 class="rack-title"><span class="rack-swatch" style="background: {{ rack.colour_hex }}"></span>{{ rack.name }}</h3>
             {% if available %}<span class="badge badge-approved">Available</span>{% else %}<span class="badge badge-out">Unavailable</span>{% endif %}
           </div>
-          <p class="rack-contents">{% for item in rack.items if item.active %}{{ item.quantity_total }} &times; {{ item.name }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+          <p class="rack-contents">{% for item in rack.items if item.active %}{{ item.quantity_total }} &times; {{ item.short_name }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
         </div>
       {% endfor %}
     </section>
