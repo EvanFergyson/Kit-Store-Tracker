@@ -49,6 +49,7 @@ from models import (
     KitItem,
     Rack,
     RackLoan,
+    RetiredKit,
     SignOut,
     Subcategory,
     db,
@@ -2488,7 +2489,7 @@ def register_routes(app):
         category_id = item.subcategory.category_id  # captured before any mutation below
         if any(so.is_out for so in item.sign_outs):
             flash(f"Cannot delete '{item.name}' while units are signed out.", "error")
-        elif item.sign_outs or item.units:
+        elif item.sign_outs or item.units or item.retirements:
             # It has loan history or registered serials (just none active right now) - the database
             # won't allow a hard delete here (old SignOut rows still point at
             # this item), so archive it instead: same effect for anyone
@@ -2515,6 +2516,46 @@ def register_routes(app):
             db.session.commit()
             flash(f"Deleted '{item.name}'.", "success")
         return redirect(url_for("admin_inventory_category", category_id=category_id))
+
+    @app.route("/admin/items/<int:item_id>/retire", methods=["POST"])
+    @login_required
+    def retire_item(item_id):
+        item = db.get_or_404(KitItem, item_id)
+        quantity = parse_positive_int(request.form.get("quantity"))
+        reason = request.form.get("reason", "").strip()
+        back_to = request.referrer or url_for("admin_inventory_category", category_id=item.subcategory.category_id)
+        if not item.active:
+            flash(f"'{item.name}' is already archived.", "error")
+        elif not reason:
+            flash("Say why it's being retired, e.g. 'Sling cut on a rock'.", "error")
+        elif quantity is None or quantity > item.quantity_total:
+            flash(f"Retire between 1 and {item.quantity_total} of '{item.name}'.", "error")
+        elif quantity > item.quantity_available:
+            flash(f"Only {item.quantity_available} of '{item.name}' are in the store — sign the rest in first.", "error")
+        elif item.rack and item.rack.open_loan:
+            flash(f"'{item.short_name}' is out with the {item.rack.name} rack — retire it once it's back.", "error")
+        else:
+            if quantity == item.quantity_total:
+                # Keep the count so restoring brings the item back as it was.
+                item.active = False
+                message = f"Retired all {quantity} of '{item.name}' — it's now archived."
+            elif _set_item_total(item, item.quantity_total - quantity):
+                message = f"Retired {quantity} x '{item.name}' — {item.quantity_total} left in stock."
+            else:
+                db.session.rollback()
+                flash(f"Some '{item.name}' just went out — try again.", "error")
+                return redirect(back_to)
+            db.session.add(
+                RetiredKit(
+                    item_id=item.id,
+                    quantity=quantity,
+                    reason=reason,
+                    retired_by=session.get("committee_name", "Committee"),
+                )
+            )
+            db.session.commit()
+            flash(message, "success")
+        return redirect(back_to)
 
     @app.route("/admin/items/<int:item_id>/restore", methods=["POST"])
     @login_required
@@ -2808,7 +2849,10 @@ def register_routes(app):
     @login_required
     def admin_archived():
         archived_items = KitItem.query.filter_by(active=False).order_by(KitItem.name).all()
-        return render_template("admin_archived.html", archived_items=archived_items, active_tab="archived")
+        retirements = RetiredKit.query.order_by(RetiredKit.retired_at.desc()).limit(100).all()
+        return render_template(
+            "admin_archived.html", archived_items=archived_items, retirements=retirements, active_tab="archived"
+        )
 
     # -- resolved requests --
     @app.route("/admin/requests/resolved")

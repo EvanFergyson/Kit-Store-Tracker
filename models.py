@@ -385,6 +385,22 @@ class SignOut(db.Model):
         return self.is_out and self.due_date is not None and self.due_date < date.today()
 
 
+class RetiredKit(db.Model):
+    """Units of a KitItem taken out of service for good (broken, lost, past
+    it), kept as a record. Retiring every unit archives the item."""
+
+    __tablename__ = "retired_kit"
+
+    id = db.Column(db.Integer, primary_key=True)
+    item_id = db.Column(db.Integer, db.ForeignKey("kit_items.id"), nullable=False)
+    quantity = db.Column(db.Integer, nullable=False)
+    reason = db.Column(db.Text, nullable=False)
+    retired_by = db.Column(db.String(120), nullable=True)
+    retired_at = db.Column(db.DateTime, default=utcnow)
+
+    item = db.relationship("KitItem", backref=db.backref("retirements", lazy=True))
+
+
 class EmailLog(db.Model):
     """One reminder-type email sent about one loan (or a digest, with no
     loan). Lets the hourly reminder run send each email exactly once."""

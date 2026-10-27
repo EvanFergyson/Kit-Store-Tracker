@@ -1123,3 +1123,10 @@ tbody tr:hover { background: var(--color-bg); }
 .inspect-group > summary { cursor: pointer; min-height: var(--tap); display: flex; align-items: center; gap: 0.35rem; }
 .unit-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .button-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+/* ---- Inventory: retire units ---- */
+.retire-details > summary { list-style: none; }
+.retire-details > summary::-webkit-details-marker { display: none; }
+.retire-form { min-width: 220px; margin-top: 0.5rem; }
+td.actions:has(.retire-details) { flex-wrap: wrap; }
+.retire-details[open] { flex-basis: 100%; }

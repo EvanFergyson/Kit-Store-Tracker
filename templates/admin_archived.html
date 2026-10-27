@@ -5,7 +5,7 @@
   {% include "_admin_nav.html" %}
 
   <section class="card">
-    <p class="empty-state">These have loan history so can't be permanently deleted, but they're hidden from the catalogue and sign-out pages. Restore one if it needs to come back into service.</p>
+    <p class="empty-state">Hidden from the catalogue and sign-out pages &mdash; fully retired kit, and deleted items that had loan history. Restore one if it needs to come back into service.</p>
     {% if archived_items %}
       <table>
         <thead><tr><th>Name</th><th>Category</th><th>Subcategory</th><th></th></tr></thead>
@@ -27,6 +27,27 @@
       </table>
     {% else %}
       <p class="empty-state">No archived items.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Retired Kit</h2>
+    {% if retirements %}
+      <table>
+        <thead><tr><th>Item</th><th>Retired</th><th>Why</th><th>By</th></tr></thead>
+        <tbody>
+          {% for r in retirements %}
+            <tr>
+              <td>{{ r.quantity }} &times; {{ r.item.short_name }}</td>
+              <td data-label="Retired">{{ r.retired_at.strftime('%d %b %Y') }}</td>
+              <td data-label="Why">{{ r.reason }}</td>
+              <td{% if r.retired_by %} data-label="By"{% endif %}>{{ r.retired_by or '' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="empty-state">Nothing retired yet. Use Retire on an item in Kit Inventory when something is broken, lost or past it.</p>
     {% endif %}
   </section>
 {% endblock %}

@@ -33,10 +33,23 @@
           <td data-label="Total">{{ item.quantity_total }}</td>
           <td class="actions">
             <a class="btn btn-small btn-secondary" href="{{ url_for('edit_item', item_id=item.id) }}">Edit</a>
-            <form method="post" action="{{ url_for('delete_item', item_id=item.id) }}" onsubmit="return confirm('Delete {{ item.name }}?');">
+            <form method="post" action="{{ url_for('delete_item', item_id=item.id) }}" onsubmit="return confirm('Delete this item? Use Retire instead if it was in use and has gone out of service.');">
               {{ csrf_field() }}
               <button type="submit" class="btn btn-small btn-danger">Delete</button>
             </form>
+            <details class="retire-details">
+              <summary class="btn btn-small btn-secondary">Retire</summary>
+              <form method="post" action="{{ url_for('retire_item', item_id=item.id) }}" class="retire-form">
+                {{ csrf_field() }}
+                <label for="retire-{{ item.id }}-qty">How many</label>
+                <input type="number" id="retire-{{ item.id }}-qty" name="quantity" min="1" max="{{ item.quantity_total }}" value="1" inputmode="numeric" required>
+                <label for="retire-{{ item.id }}-reason">Why?</label>
+                <input type="text" id="retire-{{ item.id }}-reason" name="reason" required placeholder="e.g. Trigger wire snapped">
+                {% if item.subcategory.track_serials %}<p class="field-hint">Serial-tracked kit: retire the specific piece in the Gear Register instead, so its record stays right.</p>{% endif %}
+                <p class="field-hint">Retiring all {{ item.quantity_total }} archives the item.</p>
+                <button type="submit" class="btn btn-small btn-danger">Retire</button>
+              </form>
+            </details>
           </td>
         </tr>
         {% endfor %}
